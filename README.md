@@ -38,12 +38,13 @@ py -3 -m venv .venv
 输出位于：
 
 ```text
-dist\CommandRunner\CommandRunner.exe
+dist\CommandRunner.exe
 ```
 
-开发阶段使用 `onedir`，更容易定位依赖或 DLL 问题。PyInstaller 不是交叉编译器，因此
-正式 Windows EXE 应在 Windows（或 Wine 中的 Windows Python）构建。本项目涉及托盘和
-Job Object，最终版本务必在真实 Windows 11 上测试。
+当前 spec 生成单文件程序。若 Windows 构建机安装了 UPX，PyInstaller 会进一步压缩支持
+的二进制组件。PyInstaller 不是交叉编译器，因此正式 Windows EXE 应在 Windows（或
+Wine 中的 Windows Python）构建。本项目涉及托盘和 Job Object，最终版本务必在真实
+Windows 11 上测试。
 
 ## 操作说明
 

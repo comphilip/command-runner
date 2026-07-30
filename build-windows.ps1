@@ -10,4 +10,4 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean CommandRunner.spec
 
 Write-Host ""
-Write-Host "Build complete: dist\CommandRunner\CommandRunner.exe"
+Write-Host "Build complete: dist\CommandRunner.exe"
