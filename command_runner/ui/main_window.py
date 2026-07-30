@@ -44,12 +44,15 @@ class MainWindow:
     def _build(self) -> None:
         toolbar = ttk.Frame(self.root, padding=(8, 8, 8, 4))
         toolbar.pack(fill="x")
+        self.action_buttons: dict[str, ttk.Button] = {}
         for text, command in (
             ("添加", self.add), ("编辑", self.edit), ("删除", self.delete),
             ("启动", self.start_selected), ("停止", self.stop_selected),
             ("重启", self.restart_selected),
         ):
-            ttk.Button(toolbar, text=text, command=command).pack(side="left", padx=2)
+            button = ttk.Button(toolbar, text=text, command=command)
+            button.pack(side="left", padx=2)
+            self.action_buttons[text] = button
         pane = ttk.Panedwindow(self.root, orient="vertical")
         pane.pack(fill="both", expand=True, padx=8, pady=(4, 8))
         top = ttk.Frame(pane)
@@ -145,15 +148,22 @@ class MainWindow:
 
     def start_selected(self) -> None:
         for item in self.selected():
-            self.manager.start(item)
+            if self.manager.runtime(item.id).state in {
+                State.STOPPED, State.EXITED, State.FAILED
+            }:
+                self.manager.start(item)
 
     def stop_selected(self) -> None:
         for item in self.selected():
-            self.manager.stop(item.id)
+            if self.manager.runtime(item.id).state == State.RUNNING:
+                self.manager.stop(item.id)
 
     def restart_selected(self) -> None:
         for item in self.selected():
-            self.manager.restart(item)
+            if self.manager.runtime(item.id).state in {
+                State.STOPPED, State.EXITED, State.FAILED, State.RUNNING
+            }:
+                self.manager.restart(item)
 
     def start_all(self) -> None:
         for item in self.commands:
@@ -179,6 +189,7 @@ class MainWindow:
                 self.tree.insert("", "end", iid=item.id, values=values)
         for item_id in existing:
             self.tree.delete(item_id)
+        self._update_action_buttons()
 
     def _selection_changed(self, _event=None) -> None:
         selection = self.tree.selection()
@@ -186,6 +197,26 @@ class MainWindow:
         if new_id != self.active_id:
             self.active_id = new_id
             self._render_full_log()
+        self._update_action_buttons()
+
+    def _update_action_buttons(self) -> None:
+        """Enable actions only when at least one selected command can use them."""
+        selected = self.selected()
+        states = [self.manager.runtime(item.id).state for item in selected]
+        inactive = {State.STOPPED, State.EXITED, State.FAILED}
+
+        availability = {
+            "添加": True,
+            "编辑": len(selected) == 1 and states[0] in inactive,
+            "删除": bool(selected) and all(state in inactive for state in states),
+            "启动": any(state in inactive for state in states),
+            "停止": any(state == State.RUNNING for state in states),
+            "重启": any(
+                state in inactive or state == State.RUNNING for state in states
+            ),
+        }
+        for name, enabled in availability.items():
+            self.action_buttons[name].state(["!disabled"] if enabled else ["disabled"])
 
     def _format_line(self, line) -> str:
         stamp = datetime.fromtimestamp(line.timestamp).strftime("%H:%M:%S")
