@@ -50,6 +50,35 @@ Windows 文件属性中的说明、文件版本、产品名称、产品版本、
 `version_info.txt` 定义。发布新版本时，需要同步修改其中的 `filevers`、`prodvers`、
 `FileVersion` 和 `ProductVersion`。
 
+## GitHub 自动发布
+
+推送名称符合 `v*` 的 tag 时，GitHub Actions 会在 Windows VM 中安装依赖、使用
+PyInstaller 构建 `CommandRunner.exe`、创建同名 GitHub Release 并上传 EXE。
+
+发布前必须在 `CHANGELOG.md` 中添加与 tag 完全同名的二级标题：
+
+```markdown
+## v1.2.0
+
+### Added
+
+- xxx
+
+### Fixed
+
+- yyy
+```
+
+工作流只提取该版本标题下、下一个 `##` 标题之前的内容作为 Release notes。如果找不到
+对应章节或章节为空，工作流会停止，不会创建 Release。
+
+发布示例：
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
 ## 操作说明
 
 “通过 Shell”适合 `.bat`、`.cmd`、管道、重定向和 `&&`；“直接执行”适合普通可执行

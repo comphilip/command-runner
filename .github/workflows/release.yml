@@ -1,0 +1,58 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Windows executable and publish release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          architecture: "x64"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build single-file Windows executable
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean CommandRunner.spec
+          if (-not (Test-Path "dist\CommandRunner.exe")) {
+            throw "PyInstaller did not create dist\CommandRunner.exe"
+          }
+
+      - name: Extract release notes from changelog
+        shell: pwsh
+        run: |
+          .\scripts\extract-release-notes.ps1 `
+            -Tag "${{ github.ref_name }}" `
+            -ChangelogPath "CHANGELOG.md" `
+            -OutputPath "release-notes.md"
+
+      - name: Create GitHub Release and upload executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "dist\CommandRunner.exe#CommandRunner.exe" `
+            --verify-tag `
+            --title "Command Runner ${{ github.ref_name }}" `
+            --notes-file "release-notes.md"
