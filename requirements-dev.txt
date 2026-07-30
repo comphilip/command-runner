@@ -1,0 +1,3 @@
+-i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+-r requirements.txt
+pytest>=8,<10
