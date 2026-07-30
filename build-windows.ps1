@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    py -3 -m venv .venv
+    python3 -m venv .venv
 }
 
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
@@ -10,4 +10,4 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean CommandRunner.spec
 
 Write-Host ""
-Write-Host "Build complete: dist\CommandRunner\CommandRunner.exe"
+Write-Host "Build complete: dist\CommandRunner.exe"

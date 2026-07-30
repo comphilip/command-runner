@@ -38,12 +38,46 @@ py -3 -m venv .venv
 输出位于：
 
 ```text
-dist\CommandRunner\CommandRunner.exe
+dist\CommandRunner.exe
 ```
 
-开发阶段使用 `onedir`，更容易定位依赖或 DLL 问题。PyInstaller 不是交叉编译器，因此
-正式 Windows EXE 应在 Windows（或 Wine 中的 Windows Python）构建。本项目涉及托盘和
-Job Object，最终版本务必在真实 Windows 11 上测试。
+当前 spec 生成单文件程序。若 Windows 构建机安装了 UPX，PyInstaller 会进一步压缩支持
+的二进制组件。PyInstaller 不是交叉编译器，因此正式 Windows EXE 应在 Windows（或
+Wine 中的 Windows Python）构建。本项目涉及托盘和 Job Object，最终版本务必在真实
+Windows 11 上测试。
+
+Windows 文件属性中的说明、文件版本、产品名称、产品版本、版权和语言由
+`version_info.txt` 定义。发布新版本时，需要同步修改其中的 `filevers`、`prodvers`、
+`FileVersion` 和 `ProductVersion`。
+
+## GitHub 自动发布
+
+推送名称符合 `v*` 的 tag 时，GitHub Actions 会在 Windows VM 中安装依赖、使用
+PyInstaller 构建 `CommandRunner.exe`、创建同名 GitHub Release 并上传 EXE。
+
+发布前必须在 `CHANGELOG.md` 中添加与 tag 完全同名的二级标题：
+
+```markdown
+## v1.2.0
+
+### Added
+
+- xxx
+
+### Fixed
+
+- yyy
+```
+
+工作流只提取该版本标题下、下一个 `##` 标题之前的内容作为 Release notes。如果找不到
+对应章节或章节为空，工作流会停止，不会创建 Release。
+
+发布示例：
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
 
 ## 操作说明
 
