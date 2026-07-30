@@ -46,6 +46,10 @@ dist\CommandRunner.exe
 Wine 中的 Windows Python）构建。本项目涉及托盘和 Job Object，最终版本务必在真实
 Windows 11 上测试。
 
+Windows 文件属性中的说明、文件版本、产品名称、产品版本、版权和语言由
+`version_info.txt` 定义。发布新版本时，需要同步修改其中的 `filevers`、`prodvers`、
+`FileVersion` 和 `ProductVersion`。
+
 ## 操作说明
 
 “通过 Shell”适合 `.bat`、`.cmd`、管道、重定向和 `&&`；“直接执行”适合普通可执行
