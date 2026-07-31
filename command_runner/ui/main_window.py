@@ -304,7 +304,6 @@ class MainWindow:
             self._finish_exit()
             return
         dialog = CloseDialog(self.root, len(running))
-        self.root.wait_window(dialog)
         if dialog.result == CloseAction.EXIT:
             self.request_exit()
         elif dialog.result == CloseAction.TRAY:
