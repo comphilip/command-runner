@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import tkinter as tk
 import queue
+import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox, ttk
 
@@ -52,11 +52,7 @@ class MainWindow:
             ("Stop", "T", self.stop_selected),
             ("Restart", "R", self.restart_selected),
         )
-        for index, (text, key, command) in enumerate(actions):
-            if index:
-                ttk.Separator(toolbar, orient="vertical").pack(
-                    side="left", fill="y"
-                )
+        for _, (text, key, command) in enumerate(actions):
             button = ttk.Button(toolbar, text=text, command=command)
             add_control_mnemonic(self.root, button, text, key)
             button.pack(side="left")
