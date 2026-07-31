@@ -22,7 +22,7 @@ class MainWindow:
         try:
             self.commands, prefs = self.store.load()
         except ValueError as exc:
-            messagebox.showerror("配置错误", str(exc))
+            messagebox.showerror("Configuration Error", str(exc))
             self.commands, prefs = [], {}
         self.manager = ProcessManager()
         self.wrap = tk.BooleanVar(value=prefs.get("wrap_lines", True))
@@ -46,9 +46,9 @@ class MainWindow:
         toolbar.pack(fill="x")
         self.action_buttons: dict[str, ttk.Button] = {}
         for text, command in (
-            ("添加", self.add), ("编辑", self.edit), ("删除", self.delete),
-            ("启动", self.start_selected), ("停止", self.stop_selected),
-            ("重启", self.restart_selected),
+            ("Add", self.add), ("Edit", self.edit), ("Delete", self.delete),
+            ("Start", self.start_selected), ("Stop", self.stop_selected),
+            ("Restart", self.restart_selected),
         ):
             button = ttk.Button(toolbar, text=text, command=command)
             button.pack(side="left", padx=2)
@@ -63,7 +63,10 @@ class MainWindow:
         self.tree = ttk.Treeview(
             top, columns=columns, show="headings", selectmode="extended"
         )
-        labels = {"name": "名称", "state": "状态", "pid": "PID", "exit": "退出码", "cwd": "工作目录"}
+        labels = {
+            "name": "Name", "state": "Status", "pid": "PID",
+            "exit": "Exit Code", "cwd": "Working Directory",
+        }
         widths = {"name": 180, "state": 100, "pid": 80, "exit": 70, "cwd": 500}
         for column in columns:
             self.tree.heading(column, text=labels[column])
@@ -75,18 +78,18 @@ class MainWindow:
         self.tree.bind("<<TreeviewSelect>>", self._selection_changed)
         options = ttk.Frame(bottom)
         options.pack(fill="x")
-        for text, value in (("综合", "combined"), ("stdout", "stdout"), ("stderr", "stderr")):
+        for text, value in (("Combined", "combined"), ("stdout", "stdout"), ("stderr", "stderr")):
             ttk.Radiobutton(
                 options, text=text, value=value, variable=self.log_view,
                 command=self._render_full_log
             ).pack(side="left")
         ttk.Checkbutton(
-            options, text="自动滚动", variable=self.auto_scroll, command=self._save
+            options, text="Auto-scroll", variable=self.auto_scroll, command=self._save
         ).pack(side="right")
         ttk.Checkbutton(
-            options, text="自动换行", variable=self.wrap, command=self._toggle_wrap
+            options, text="Word wrap", variable=self.wrap, command=self._toggle_wrap
         ).pack(side="right", padx=10)
-        ttk.Button(options, text="跳到最新", command=lambda: self.text.see("end")).pack(side="right")
+        ttk.Button(options, text="Jump to Latest", command=lambda: self.text.see("end")).pack(side="right")
         log_frame = ttk.Frame(bottom)
         log_frame.pack(fill="both", expand=True, pady=(5, 0))
         self.text = tk.Text(
@@ -120,11 +123,11 @@ class MainWindow:
     def edit(self) -> None:
         selected = self.selected()
         if len(selected) != 1:
-            messagebox.showinfo("编辑命令", "请选择一个命令。")
+            messagebox.showinfo("Edit Command", "Please select a command.")
             return
         runtime = self.manager.runtime(selected[0].id)
         if runtime.state in {State.STARTING, State.RUNNING, State.STOPPING}:
-            messagebox.showwarning("无法编辑", "请先停止这个命令。")
+            messagebox.showwarning("Cannot Edit", "Stop this command before editing it.")
             return
         dialog = CommandDialog(self.root, selected[0])
         self.root.wait_window(dialog)
@@ -138,9 +141,14 @@ class MainWindow:
         if not selected:
             return
         if any(item.id in self.manager.running_ids() for item in selected):
-            messagebox.showwarning("无法删除", "请先停止选中的运行中命令。")
+            messagebox.showwarning(
+                "Cannot Delete", "Stop the selected running commands before deleting them."
+            )
             return
-        if messagebox.askyesno("删除命令", f"确定删除 {len(selected)} 个命令吗？"):
+        if messagebox.askyesno(
+            "Delete Commands",
+            f"Are you sure you want to delete {len(selected)} command(s)?",
+        ):
             ids = {item.id for item in selected}
             self.commands = [item for item in self.commands if item.id not in ids]
             self._save()
@@ -206,12 +214,12 @@ class MainWindow:
         inactive = {State.STOPPED, State.EXITED, State.FAILED}
 
         availability = {
-            "添加": True,
-            "编辑": len(selected) == 1 and states[0] in inactive,
-            "删除": bool(selected) and all(state in inactive for state in states),
-            "启动": any(state in inactive for state in states),
-            "停止": any(state == State.RUNNING for state in states),
-            "重启": any(
+            "Add": True,
+            "Edit": len(selected) == 1 and states[0] in inactive,
+            "Delete": bool(selected) and all(state in inactive for state in states),
+            "Start": any(state in inactive for state in states),
+            "Stop": any(state == State.RUNNING for state in states),
+            "Restart": any(
                 state in inactive or state == State.RUNNING for state in states
             ),
         }
@@ -280,7 +288,7 @@ class MainWindow:
                 {"wrap_lines": self.wrap.get(), "auto_scroll": self.auto_scroll.get()},
             )
         except OSError as exc:
-            messagebox.showerror("保存失败", str(exc))
+            messagebox.showerror("Save Failed", str(exc))
 
     def _on_unmap(self, _event=None) -> None:
         self.root.after(100, self._minimize_if_iconic)
@@ -294,7 +302,10 @@ class MainWindow:
             self.root.withdraw()
         else:
             self.root.state("normal")
-            messagebox.showerror("无法显示托盘", "请先安装依赖：pip install pystray pillow")
+            messagebox.showerror(
+                "System Tray Unavailable",
+                "Install the required packages first: pip install pystray pillow",
+            )
 
     def restore(self) -> None:
         self.tray.hide()
@@ -320,7 +331,7 @@ class MainWindow:
             return
         self._exiting = True
         self.stop_all()
-        self.root.title("Command Runner — 正在停止所有命令…")
+        self.root.title("Command Runner — Stopping all commands…")
 
     def _finish_exit(self) -> None:
         self._save()

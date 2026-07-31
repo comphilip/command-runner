@@ -32,7 +32,7 @@ class ConfigStore:
                 "auto_scroll": bool(prefs.get("auto_scroll", True)),
             }
         except (OSError, ValueError, TypeError) as exc:
-            raise ValueError(f"无法读取配置文件 {self.path}: {exc}") from exc
+            raise ValueError(f"Unable to read configuration file {self.path}: {exc}") from exc
 
     def save(self, commands: list[CommandConfig], preferences: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

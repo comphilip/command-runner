@@ -66,7 +66,7 @@ class ProcessManager:
         try:
             cwd = Path(config.working_directory).expanduser()
             if not cwd.is_dir():
-                raise FileNotFoundError(f"工作目录不存在: {cwd}")
+                raise FileNotFoundError(f"Working directory does not exist: {cwd}")
             shell = config.execution_mode == "shell"
             if os.name == "nt":
                 args: str | list[str] = config.command_line
@@ -99,7 +99,7 @@ class ProcessManager:
                     job = None
                     self._append_log(
                         config.id, "stderr",
-                        f"[Command Runner] Job Object 不可用，将使用 taskkill 作为停止后备: {exc}",
+                        f"[Command Runner] Job Object unavailable; using taskkill as a fallback: {exc}",
                     )
             with self._lock:
                 if runtime.generation != generation:
@@ -118,7 +118,7 @@ class ProcessManager:
                 target=self._wait, args=(config.id, generation, process), daemon=True
             ).start()
         except Exception as exc:
-            self._append_log(config.id, "stderr", f"[Command Runner] 启动失败: {exc}")
+            self._append_log(config.id, "stderr", f"[Command Runner] Failed to start: {exc}")
             with self._lock:
                 runtime.state, runtime.exit_code = State.FAILED, -1
             self.events.put(("state", config.id))

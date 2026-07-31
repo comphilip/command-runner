@@ -27,12 +27,12 @@ class TrayManager:
         draw.line((21, 27, 29, 33, 21, 39), fill="white", width=4)
         draw.line((34, 39, 44, 39), fill="white", width=4)
         menu = pystray.Menu(
-            pystray.MenuItem("打开", lambda: self.dispatch(self.restore), default=True),
+            pystray.MenuItem("Open", lambda: self.dispatch(self.restore), default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("全部启动", lambda: self.dispatch(self.start_all)),
-            pystray.MenuItem("全部停止", lambda: self.dispatch(self.stop_all)),
+            pystray.MenuItem("Start All", lambda: self.dispatch(self.start_all)),
+            pystray.MenuItem("Stop All", lambda: self.dispatch(self.stop_all)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("退出", lambda: self.dispatch(self.exit_app)),
+            pystray.MenuItem("Exit", lambda: self.dispatch(self.exit_app)),
         )
         self.icon = pystray.Icon("CommandRunner", image, "Command Runner", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()

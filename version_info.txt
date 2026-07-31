@@ -22,7 +22,7 @@ VSVersionInfo(
                         StringStruct("CompanyName", "Command Runner contributors"),
                         StringStruct(
                             "FileDescription",
-                            "后台命令行运行器",
+                            "Background command-line runner",
                         ),
                         StringStruct("FileVersion", "0.1.0.0"),
                         StringStruct("InternalName", "CommandRunner"),
