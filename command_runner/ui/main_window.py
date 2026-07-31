@@ -172,7 +172,6 @@ class MainWindow:
 
     def add(self) -> None:
         dialog = CommandDialog(self.root)
-        self.root.wait_window(dialog)
         if dialog.result:
             self._show_save_error(self.view_model.add(dialog.result))
 
@@ -187,7 +186,6 @@ class MainWindow:
             )
             return
         dialog = CommandDialog(self.root, selected[0])
-        self.root.wait_window(dialog)
         if dialog.result:
             self._show_save_error(self.view_model.replace_selected(dialog.result))
 
