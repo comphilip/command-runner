@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .models import CommandConfig
+from .models import CommandConfig, Preferences
 
 
 def default_config_path() -> Path:
@@ -20,9 +20,9 @@ class ConfigStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or default_config_path()
 
-    def load(self) -> tuple[list[CommandConfig], dict[str, Any]]:
+    def load(self) -> tuple[list[CommandConfig], Preferences]:
         if not self.path.exists():
-            return [], {"wrap_lines": False, "auto_scroll": True}
+            return [], Preferences()
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             commands = []
@@ -31,20 +31,28 @@ class ConfigStore:
                 item.pop("execution_mode", None)
                 commands.append(CommandConfig(**item))
             prefs = payload.get("preferences", {})
-            return commands, {
-                "wrap_lines": bool(prefs.get("wrap_lines", False)),
-                "auto_scroll": bool(prefs.get("auto_scroll", True)),
-            }
+            return commands, Preferences(
+                wrap_lines=bool(prefs.get("wrap_lines", False)),
+                auto_scroll=bool(prefs.get("auto_scroll", True)),
+            )
         except (OSError, ValueError, TypeError) as exc:
             raise ValueError(f"Unable to read configuration file {self.path}: {exc}") from exc
 
-    def save(self, commands: list[CommandConfig], preferences: dict[str, Any]) -> None:
+    def save(
+        self,
+        commands: list[CommandConfig],
+        preferences: Preferences | dict[str, Any],
+    ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".json.tmp")
         payload = {
             "version": 1,
             "commands": [item.to_dict() for item in commands],
-            "preferences": preferences,
+            "preferences": (
+                preferences.to_dict()
+                if isinstance(preferences, Preferences)
+                else preferences
+            ),
         }
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"

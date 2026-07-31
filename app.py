@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 import sys
 import tkinter as tk
-from pathlib import Path
 
 from command_runner.config_store import default_config_path
 from command_runner.ui.main_window import MainWindow
+from command_runner.viewmodels import MainWindowViewModel
 
 
 def install_crash_log() -> None:
@@ -27,7 +27,8 @@ def install_crash_log() -> None:
 def main() -> None:
     install_crash_log()
     root = tk.Tk()
-    MainWindow(root)
+    view_model = MainWindowViewModel(root)
+    MainWindow(root, view_model)
     root.mainloop()
 
 

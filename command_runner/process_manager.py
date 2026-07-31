@@ -11,7 +11,15 @@ from dataclasses import dataclass, field
 from itertools import count
 from pathlib import Path
 
-from .models import CommandConfig, LogLine, State
+from .models import (
+    CommandConfig,
+    LogAdded,
+    LogLine,
+    ProcessEvent,
+    RuntimeSnapshot,
+    State,
+    StateChanged,
+)
 from .windows_job import WindowsJob
 
 
@@ -32,12 +40,33 @@ class Runtime:
 class ProcessManager:
     def __init__(self) -> None:
         self.runtimes: dict[str, Runtime] = {}
-        self.events: queue.Queue[tuple] = queue.Queue()
+        self.events: queue.Queue[ProcessEvent] = queue.Queue()
         self._sequence = count(1)
         self._lock = threading.RLock()
 
     def runtime(self, command_id: str) -> Runtime:
         return self.runtimes.setdefault(command_id, Runtime())
+
+    def snapshot(self, command_id: str) -> RuntimeSnapshot:
+        with self._lock:
+            runtime = self.runtime(command_id)
+            return RuntimeSnapshot(
+                state=runtime.state,
+                pid=runtime.pid,
+                exit_code=runtime.exit_code,
+                stdout=tuple(runtime.stdout),
+                stderr=tuple(runtime.stderr),
+                combined=tuple(runtime.combined),
+                cleared_through=runtime.cleared_through,
+            )
+
+    def drain_events(self) -> list[ProcessEvent]:
+        events: list[ProcessEvent] = []
+        while True:
+            try:
+                events.append(self.events.get_nowait())
+            except queue.Empty:
+                return events
 
     def _encoding(self, value: str) -> str:
         return {
@@ -56,7 +85,7 @@ class ProcessManager:
             runtime.exit_code = None
             runtime.generation += 1
             generation = runtime.generation
-            self.events.put(("state", config.id))
+            self.events.put(StateChanged(config.id))
         threading.Thread(
             target=self._start_worker, args=(config, generation), daemon=True
         ).start()
@@ -104,7 +133,7 @@ class ProcessManager:
                     return
                 runtime.process, runtime.job = process, job
                 runtime.pid, runtime.state = process.pid, State.RUNNING
-            self.events.put(("state", config.id))
+            self.events.put(StateChanged(config.id))
             for stream_name, pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
                 threading.Thread(
                     target=self._read_pipe,
@@ -118,7 +147,7 @@ class ProcessManager:
             self._append_log(config.id, "stderr", f"[Command Runner] Failed to start: {exc}")
             with self._lock:
                 runtime.state, runtime.exit_code = State.FAILED, -1
-            self.events.put(("state", config.id))
+            self.events.put(StateChanged(config.id))
 
     def _read_pipe(self, command_id: str, generation: int, stream: str, pipe) -> None:
         if pipe is None:
@@ -137,7 +166,7 @@ class ProcessManager:
             runtime = self.runtime(command_id)
             getattr(runtime, stream).append(line)
             runtime.combined.append(line)
-        self.events.put(("log", command_id, line))
+        self.events.put(LogAdded(command_id, line))
 
     def clear_logs(self, command_id: str) -> None:
         with self._lock:
@@ -171,7 +200,7 @@ class ProcessManager:
             if runtime.job:
                 runtime.job.close()
                 runtime.job = None
-        self.events.put(("state", command_id))
+        self.events.put(StateChanged(command_id))
 
     def stop(self, command_id: str, timeout: float = 4.0) -> None:
         with self._lock:
@@ -180,7 +209,7 @@ class ProcessManager:
                 return
             runtime.state = State.STOPPING
             process, job, generation = runtime.process, runtime.job, runtime.generation
-        self.events.put(("state", command_id))
+        self.events.put(StateChanged(command_id))
         threading.Thread(
             target=self._stop_worker,
             args=(command_id, generation, process, job, timeout),
@@ -244,7 +273,7 @@ class ProcessManager:
             "stderr",
             "[Command Runner] Unable to stop the command process.",
         )
-        self.events.put(("state", command_id))
+        self.events.put(StateChanged(command_id))
 
     def restart(self, config: CommandConfig) -> None:
         runtime = self.runtime(config.id)
