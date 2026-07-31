@@ -5,6 +5,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from ..models import CommandConfig
+from .accessibility import add_control_mnemonic, add_label_mnemonic
 from .window_utils import center_over_parent
 
 
@@ -25,27 +26,48 @@ class CommandDialog(tk.Toplevel):
         }
         frame = ttk.Frame(self, padding=14)
         frame.grid(sticky="nsew")
-        ttk.Label(frame, text="Name").grid(row=0, column=0, sticky="w", pady=4)
+        name_label = ttk.Label(frame, text="Name")
+        name_label.grid(row=0, column=0, sticky="w", pady=4)
         name = ttk.Entry(frame, textvariable=self.vars["name"], width=60)
         name.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
-        ttk.Label(frame, text="Working Directory").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Entry(frame, textvariable=self.vars["working_directory"]).grid(
+        add_label_mnemonic(self, name_label, "Name", "N", name)
+        directory_label = ttk.Label(frame, text="Working Directory")
+        directory_label.grid(row=1, column=0, sticky="w", pady=4)
+        directory = ttk.Entry(frame, textvariable=self.vars["working_directory"])
+        directory.grid(
             row=1, column=1, sticky="ew", pady=4
         )
-        ttk.Button(frame, text="Browse…", command=self._browse).grid(row=1, column=2, padx=(6, 0))
-        ttk.Label(frame, text="Command Line").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Entry(frame, textvariable=self.vars["command_line"]).grid(
+        add_label_mnemonic(
+            self, directory_label, "Working Directory", "W", directory
+        )
+        browse = ttk.Button(frame, text="Browse…", command=self._browse)
+        add_control_mnemonic(self, browse, "Browse…", "B")
+        browse.grid(row=1, column=2, padx=(6, 0))
+        command_label = ttk.Label(frame, text="Command Line")
+        command_label.grid(row=2, column=0, sticky="w", pady=4)
+        command_line = ttk.Entry(frame, textvariable=self.vars["command_line"])
+        command_line.grid(
             row=2, column=1, columnspan=2, sticky="ew", pady=4
         )
-        ttk.Label(frame, text="Output Encoding").grid(row=3, column=0, sticky="w", pady=4)
-        ttk.Combobox(
+        add_label_mnemonic(self, command_label, "Command Line", "L", command_line)
+        encoding_label = ttk.Label(frame, text="Output Encoding")
+        encoding_label.grid(row=3, column=0, sticky="w", pady=4)
+        encoding = ttk.Combobox(
             frame, textvariable=self.vars["encoding"],
             values=("auto", "utf-8", "gbk", "system"), state="readonly", width=15
-        ).grid(row=3, column=1, sticky="w", pady=4)
+        )
+        encoding.grid(row=3, column=1, sticky="w", pady=4)
+        add_label_mnemonic(
+            self, encoding_label, "Output Encoding", "O", encoding
+        )
         buttons = ttk.Frame(frame)
         buttons.grid(row=4, column=0, columnspan=3, sticky="e", pady=(14, 0))
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="Save", command=self._save).pack(side="right", padx=8)
+        cancel = ttk.Button(buttons, text="Cancel", command=self.destroy)
+        add_control_mnemonic(self, cancel, "Cancel", "C")
+        cancel.pack(side="right")
+        save = ttk.Button(buttons, text="Save", command=self._save)
+        add_control_mnemonic(self, save, "Save", "S")
+        save.pack(side="right", padx=8)
         frame.columnconfigure(1, weight=1)
         self.transient(parent)
         center_over_parent(self, parent)

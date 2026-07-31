@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 
+from .accessibility import add_control_mnemonic
 from .window_utils import center_over_parent
 
 
@@ -17,16 +18,21 @@ class CloseDialog(tk.Toplevel):
         ).pack(anchor="w", pady=(0, 16))
         buttons = ttk.Frame(box)
         buttons.pack()
-        ttk.Button(
+        stop_and_exit = ttk.Button(
             buttons, text="Stop Commands and Exit", command=lambda: self._choose("exit")
-        ).pack(side="left")
+        )
+        add_control_mnemonic(self, stop_and_exit, "Stop Commands and Exit", "S")
+        stop_and_exit.pack(side="left")
         cancel = ttk.Button(
             buttons, text="Cancel", command=lambda: self._choose("cancel")
         )
+        add_control_mnemonic(self, cancel, "Cancel", "C")
         cancel.pack(side="left", padx=8)
-        ttk.Button(
+        minimize = ttk.Button(
             buttons, text="Minimize to Tray", command=lambda: self._choose("tray")
-        ).pack(side="left")
+        )
+        add_control_mnemonic(self, minimize, "Minimize to Tray", "M")
+        minimize.pack(side="left")
         self.transient(parent)
         center_over_parent(self, parent)
         self.grab_set()

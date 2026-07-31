@@ -9,6 +9,7 @@ from ..config_store import ConfigStore
 from ..models import CommandConfig, State
 from ..process_manager import ProcessManager
 from ..tray_manager import TrayManager
+from .accessibility import add_control_mnemonic, add_label_mnemonic
 from .close_dialog import CloseDialog
 from .command_dialog import CommandDialog
 
@@ -45,12 +46,14 @@ class MainWindow:
         toolbar = ttk.Frame(self.root, padding=(8, 8, 8, 4))
         toolbar.pack(fill="x")
         self.action_buttons: dict[str, ttk.Button] = {}
-        for text, command in (
-            ("Add", self.add), ("Edit", self.edit), ("Delete", self.delete),
-            ("Start", self.start_selected), ("Stop", self.stop_selected),
-            ("Restart", self.restart_selected),
+        for text, key, command in (
+            ("Add", "A", self.add), ("Edit", "E", self.edit),
+            ("Delete", "D", self.delete), ("Start", "S", self.start_selected),
+            ("Stop", "T", self.stop_selected),
+            ("Restart", "R", self.restart_selected),
         ):
             button = ttk.Button(toolbar, text=text, command=command)
+            add_control_mnemonic(self.root, button, text, key)
             button.pack(side="left", padx=2)
             self.action_buttons[text] = button
         pane = ttk.Panedwindow(self.root, orient="vertical")
@@ -79,35 +82,52 @@ class MainWindow:
         self.tree.bind("<Double-1>", self._row_double_clicked)
         options = ttk.Frame(bottom)
         options.pack(fill="x")
-        for text, value in (("Combined", "combined"), ("stdout", "stdout"), ("stderr", "stderr")):
-            ttk.Radiobutton(
+        for text, key, value in (
+            ("Combined", "M", "combined"),
+            ("stdout", "U", "stdout"),
+            ("stderr", "O", "stderr"),
+        ):
+            radio = ttk.Radiobutton(
                 options, text=text, value=value, variable=self.log_view,
                 command=self._render_full_log
-            ).pack(side="left")
-        ttk.Checkbutton(
+            )
+            add_control_mnemonic(self.root, radio, text, key)
+            radio.pack(side="left")
+        auto_scroll = ttk.Checkbutton(
             options, text="Auto-scroll", variable=self.auto_scroll, command=self._save
-        ).pack(side="right")
-        ttk.Checkbutton(
-            options, text="Word wrap", variable=self.wrap, command=self._toggle_wrap
-        ).pack(side="right", padx=10)
-        ttk.Button(options, text="Jump to Latest", command=lambda: self.text.see("end")).pack(side="right")
-        ttk.Button(options, text="Clear", command=self._clear_logs).pack(
-            side="right", padx=(0, 6)
         )
+        add_control_mnemonic(self.root, auto_scroll, "Auto-scroll", "L")
+        auto_scroll.pack(side="right")
+        word_wrap = ttk.Checkbutton(
+            options, text="Word wrap", variable=self.wrap, command=self._toggle_wrap
+        )
+        add_control_mnemonic(self.root, word_wrap, "Word wrap", "W")
+        word_wrap.pack(side="right", padx=10)
+        jump = ttk.Button(
+            options, text="Jump to Latest", command=lambda: self.text.see("end")
+        )
+        add_control_mnemonic(self.root, jump, "Jump to Latest", "J")
+        jump.pack(side="right")
+        clear = ttk.Button(options, text="Clear", command=self._clear_logs)
+        add_control_mnemonic(self.root, clear, "Clear", "C")
+        clear.pack(side="right", padx=(0, 6))
         log_frame = ttk.Frame(bottom)
         log_frame.pack(fill="both", expand=True, pady=(5, 0))
+        log_label = ttk.Label(log_frame, text="Log output")
+        log_label.grid(row=0, column=0, sticky="w")
         self.text = tk.Text(
             log_frame, state="disabled", wrap="word" if self.wrap.get() else "none",
             font=("Consolas", 10), undo=False
         )
+        add_label_mnemonic(self.root, log_label, "Log output", "G", self.text)
         self.text.tag_configure("stderr", foreground="#c62828")
         vy = ttk.Scrollbar(log_frame, orient="vertical", command=self.text.yview)
         hx = ttk.Scrollbar(log_frame, orient="horizontal", command=self.text.xview)
         self.text.configure(yscrollcommand=vy.set, xscrollcommand=hx.set)
-        self.text.grid(row=0, column=0, sticky="nsew")
-        vy.grid(row=0, column=1, sticky="ns")
-        hx.grid(row=1, column=0, sticky="ew")
-        log_frame.rowconfigure(0, weight=1)
+        self.text.grid(row=1, column=0, sticky="nsew")
+        vy.grid(row=1, column=1, sticky="ns")
+        hx.grid(row=2, column=0, sticky="ew")
+        log_frame.rowconfigure(1, weight=1)
         log_frame.columnconfigure(0, weight=1)
 
     def by_id(self, command_id: str) -> CommandConfig | None:
