@@ -15,6 +15,15 @@ class State(str, Enum):
     FAILED = "FAILED"
 
 
+@dataclass(frozen=True)
+class Preferences:
+    wrap_lines: bool = False
+    auto_scroll: bool = True
+
+    def to_dict(self) -> dict[str, bool]:
+        return asdict(self)
+
+
 @dataclass
 class CommandConfig:
     name: str
@@ -41,3 +50,28 @@ class LogLine:
     @classmethod
     def create(cls, sequence: int, stream: str, text: str) -> "LogLine":
         return cls(sequence, time(), stream, text.rstrip("\r\n"))
+
+
+@dataclass(frozen=True)
+class RuntimeSnapshot:
+    state: State
+    pid: int | None
+    exit_code: int | None
+    stdout: tuple[LogLine, ...]
+    stderr: tuple[LogLine, ...]
+    combined: tuple[LogLine, ...]
+    cleared_through: int
+
+
+@dataclass(frozen=True)
+class StateChanged:
+    command_id: str
+
+
+@dataclass(frozen=True)
+class LogAdded:
+    command_id: str
+    line: LogLine
+
+
+ProcessEvent = StateChanged | LogAdded

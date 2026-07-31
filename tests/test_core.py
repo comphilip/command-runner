@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from command_runner.config_store import ConfigStore
-from command_runner.models import CommandConfig, State
+from command_runner.models import CommandConfig, Preferences, State
 from command_runner.process_manager import ProcessManager
 
 
@@ -22,7 +22,7 @@ def test_config_round_trip(tmp_path: Path):
     store.save([command], {"wrap_lines": False, "auto_scroll": True})
     commands, preferences = store.load()
     assert commands == [command]
-    assert preferences == {"wrap_lines": False, "auto_scroll": True}
+    assert preferences == Preferences(wrap_lines=False, auto_scroll=True)
 
 
 def test_capture_stdout_and_stderr(tmp_path: Path):

@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.2
+* change version to 0.1.2.0
+* resource saving: remove gui resource on minimal to tray. remvoe tray resource on show main window
+* command_dialog.py: using tkinter.simpledialog
+* close_dialog.py: using tkinter.simpledialog
+* fix pytest error
+* migrate to mvvm pattern
+* add mvvm.md: mvvm design
+
 ## v0.1.1
 * change version to 0.1.1.0, translate README.md to English
 * toolbar: remove seperator
