@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 
+from .window_utils import center_over_parent
+
 
 class CloseDialog(tk.Toplevel):
     def __init__(self, parent, count: int) -> None:
@@ -26,6 +28,7 @@ class CloseDialog(tk.Toplevel):
             buttons, text="Minimize to Tray", command=lambda: self._choose("tray")
         ).pack(side="left")
         self.transient(parent)
+        center_over_parent(self, parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", lambda: self._choose("cancel"))
         self.bind("<Escape>", lambda _e: self._choose("cancel"))

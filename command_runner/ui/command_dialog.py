@@ -5,6 +5,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from ..models import CommandConfig
+from .window_utils import center_over_parent
 
 
 class CommandDialog(tk.Toplevel):
@@ -60,6 +61,7 @@ class CommandDialog(tk.Toplevel):
         ttk.Button(buttons, text="Save", command=self._save).pack(side="right", padx=8)
         frame.columnconfigure(1, weight=1)
         self.transient(parent)
+        center_over_parent(self, parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.bind("<Escape>", lambda _e: self.destroy())
