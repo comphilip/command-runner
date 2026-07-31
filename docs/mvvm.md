@@ -35,6 +35,9 @@ Reduce `MainWindow` to widget construction, bindings, rendering projections, sch
 - Keep `CommandDialog` responsible only for controls, directory selection, validation display, and window lifetime.
 - Keep `CloseDialog` presentation-only and replace string results with a `CloseAction` enum.
 - Keep `TrayManager` as an infrastructure adapter wired through Tk's dispatcher.
+- Let an application controller own the ViewModel independently from the disposable main-window View.
+- When minimized to the tray, destroy the main `Toplevel` and retain only the hidden Tcl root, ViewModel, process services, and tray manager.
+- When restored, stop and release the tray manager before recreating the main window against the existing ViewModel.
 
 ### Model and service boundaries
 

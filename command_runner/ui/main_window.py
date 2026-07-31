@@ -4,7 +4,6 @@ import tkinter as tk
 from collections.abc import Callable
 from tkinter import messagebox, ttk
 
-from ..tray_manager import TrayManager
 from ..viewmodels import CloseAction, MainWindowViewModel
 from .accessibility import add_control_mnemonic, add_label_mnemonic
 from .bindings import bind_enabled
@@ -17,22 +16,22 @@ class MainWindow:
 
     def __init__(
         self,
-        root: tk.Tk,
-        view_model: MainWindowViewModel | None = None,
+        root: tk.Toplevel,
+        view_model: MainWindowViewModel,
+        on_minimize: Callable[[], bool],
+        on_exit: Callable[[], None],
+        on_dispose: Callable[[], None],
     ) -> None:
         self.root = root
-        self.view_model = view_model or MainWindowViewModel(root)
+        self.view_model = view_model
+        self.on_minimize = on_minimize
+        self.on_exit = on_exit
+        self.on_dispose = on_dispose
+        self._disposed = False
         self.root.title("Command Runner")
         self.root.geometry("1050x700")
         self._unbinders: list[Callable[[], None]] = []
         self._build()
-        self.tray = TrayManager(
-            lambda fn: self.root.after(0, fn),
-            self.restore,
-            self.view_model.start_all,
-            self.view_model.stop_all,
-            self.request_exit,
-        )
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("<Unmap>", self._on_unmap)
         self._rows_trace = self.view_model.rows_revision.trace_add(
@@ -50,7 +49,7 @@ class MainWindow:
                     "Configuration Error", self.view_model.startup_error
                 ),
             )
-        self.root.after(100, self._poll_events)
+        self._poll_id = self.root.after(100, self._poll_events)
 
     def _build(self) -> None:
         toolbar = ttk.Frame(self.root, padding=(8, 8, 8, 4))
@@ -253,9 +252,9 @@ class MainWindow:
 
     def _poll_events(self) -> None:
         if self.view_model.poll_events():
-            self._finish_exit()
+            self.on_exit()
             return
-        self.root.after(100, self._poll_events)
+        self._poll_id = self.root.after(100, self._poll_events)
 
     def _toggle_wrap(self) -> None:
         self.text.configure(
@@ -281,17 +280,14 @@ class MainWindow:
             self.minimize_to_tray()
 
     def minimize_to_tray(self) -> None:
-        if self.tray.show():
-            self.root.withdraw()
-        else:
+        if not self.on_minimize():
             self.root.state("normal")
             messagebox.showerror(
                 "System Tray Unavailable",
                 "Install the required packages first: pip install pystray pillow",
             )
 
-    def restore(self) -> None:
-        self.tray.hide()
+    def show(self) -> None:
         self.root.deiconify()
         self.root.state("normal")
         self.root.lift()
@@ -299,23 +295,25 @@ class MainWindow:
     def on_close(self) -> None:
         running = self.view_model.manager.running_ids()
         if not running:
-            self._finish_exit()
+            self.on_exit()
             return
         dialog = CloseDialog(self.root, len(running))
         if dialog.result == CloseAction.EXIT:
-            self.request_exit()
+            self.on_exit()
         elif dialog.result == CloseAction.TRAY:
             self.minimize_to_tray()
 
-    def request_exit(self) -> None:
-        if self.view_model.request_exit():
-            self._finish_exit()
-        else:
-            self.root.title("Command Runner — Stopping all commands…")
+    def show_stopping(self) -> None:
+        self.root.title("Command Runner — Stopping all commands…")
 
-    def _finish_exit(self) -> None:
-        self._show_save_error(self.view_model.save_preferences())
-        self.tray.stop()
+    def dispose(self) -> None:
+        if self._disposed:
+            return
+        self._disposed = True
+        try:
+            self.root.after_cancel(self._poll_id)
+        except tk.TclError:
+            pass
         for unbind in self._unbinders:
             unbind()
         try:
@@ -323,5 +321,5 @@ class MainWindow:
             self.view_model.logs_revision.trace_remove("write", self._logs_trace)
         except tk.TclError:
             pass
-        self.view_model.dispose()
         self.root.destroy()
+        self.on_dispose()
