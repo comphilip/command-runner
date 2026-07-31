@@ -46,15 +46,20 @@ class MainWindow:
         toolbar = ttk.Frame(self.root, padding=(8, 8, 8, 4))
         toolbar.pack(fill="x")
         self.action_buttons: dict[str, ttk.Button] = {}
-        for text, key, command in (
+        actions = (
             ("Add", "A", self.add), ("Edit", "E", self.edit),
             ("Delete", "D", self.delete), ("Start", "S", self.start_selected),
             ("Stop", "T", self.stop_selected),
             ("Restart", "R", self.restart_selected),
-        ):
+        )
+        for index, (text, key, command) in enumerate(actions):
+            if index:
+                ttk.Separator(toolbar, orient="vertical").pack(
+                    side="left", fill="y"
+                )
             button = ttk.Button(toolbar, text=text, command=command)
             add_control_mnemonic(self.root, button, text, key)
-            button.pack(side="left", padx=2)
+            button.pack(side="left")
             self.action_buttons[text] = button
         pane = ttk.Panedwindow(self.root, orient="vertical")
         pane.pack(fill="both", expand=True, padx=8, pady=(4, 8))
