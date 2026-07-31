@@ -150,9 +150,18 @@ class ProcessManager:
 
     def _wait(self, command_id: str, generation: int, process: subprocess.Popen) -> None:
         code = process.wait()
+        self._finalize_process(command_id, generation, process, code)
+
+    def _finalize_process(
+        self,
+        command_id: str,
+        generation: int,
+        process: subprocess.Popen,
+        code: int,
+    ) -> None:
         with self._lock:
             runtime = self.runtime(command_id)
-            if runtime.generation != generation:
+            if runtime.generation != generation or runtime.process is not process:
                 return
             was_stopping = runtime.state == State.STOPPING
             runtime.exit_code, runtime.pid, runtime.process = code, None, None
@@ -184,10 +193,12 @@ class ProcessManager:
                 process.send_signal(signal.CTRL_BREAK_EVENT)
             else:
                 os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=timeout)
+            code = process.wait(timeout=timeout)
+            self._finalize_process(command_id, generation, process, code)
             return
-        except (subprocess.TimeoutExpired, PermissionError, ProcessLookupError):
+        except (OSError, subprocess.SubprocessError):
             pass
+
         try:
             if job:
                 job.terminate()
@@ -198,8 +209,38 @@ class ProcessManager:
                 )
             else:
                 os.killpg(process.pid, signal.SIGKILL)
-        except (OSError, ProcessLookupError):
+        except (OSError, subprocess.SubprocessError):
             pass
+
+        try:
+            code = process.wait(timeout=max(1.0, timeout))
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                code = process.wait(timeout=2.0)
+            except (OSError, subprocess.SubprocessError):
+                self._stop_failed(command_id, generation, process)
+                return
+        self._finalize_process(command_id, generation, process, code)
+
+    def _stop_failed(
+        self, command_id: str, generation: int, process: subprocess.Popen
+    ) -> None:
+        with self._lock:
+            runtime = self.runtime(command_id)
+            if (
+                runtime.generation != generation
+                or runtime.process is not process
+                or runtime.state != State.STOPPING
+            ):
+                return
+            runtime.state = State.RUNNING
+        self._append_log(
+            command_id,
+            "stderr",
+            "[Command Runner] Unable to stop the command process.",
+        )
+        self.events.put(("state", command_id))
 
     def restart(self, config: CommandConfig) -> None:
         runtime = self.runtime(config.id)
