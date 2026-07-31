@@ -20,7 +20,6 @@ class CommandConfig:
     name: str
     working_directory: str
     command_line: str
-    execution_mode: str = "shell"
     encoding: str = "auto"
     id: str = ""
 

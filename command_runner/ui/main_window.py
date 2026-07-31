@@ -25,7 +25,7 @@ class MainWindow:
             messagebox.showerror("Configuration Error", str(exc))
             self.commands, prefs = [], {}
         self.manager = ProcessManager()
-        self.wrap = tk.BooleanVar(value=prefs.get("wrap_lines", True))
+        self.wrap = tk.BooleanVar(value=prefs.get("wrap_lines", False))
         self.auto_scroll = tk.BooleanVar(value=prefs.get("auto_scroll", True))
         self.log_view = tk.StringVar(value="combined")
         self.active_id: str | None = None
@@ -90,6 +90,9 @@ class MainWindow:
             options, text="Word wrap", variable=self.wrap, command=self._toggle_wrap
         ).pack(side="right", padx=10)
         ttk.Button(options, text="Jump to Latest", command=lambda: self.text.see("end")).pack(side="right")
+        ttk.Button(options, text="Clear", command=self._clear_logs).pack(
+            side="right", padx=(0, 6)
+        )
         log_frame = ttk.Frame(bottom)
         log_frame.pack(fill="both", expand=True, pady=(5, 0))
         self.text = tk.Text(
@@ -246,6 +249,10 @@ class MainWindow:
     def _append_visible(self, line) -> None:
         if line.sequence in self._rendered_sequences:
             return
+        if self.active_id and line.sequence <= self.manager.runtime(
+            self.active_id
+        ).cleared_through:
+            return
         if self.log_view.get() not in ("combined", line.stream):
             return
         at_bottom = self.text.yview()[1] >= 0.999
@@ -258,6 +265,11 @@ class MainWindow:
         self._rendered_sequences.add(line.sequence)
         if self.auto_scroll.get() and at_bottom:
             self.text.see("end")
+
+    def _clear_logs(self) -> None:
+        if self.active_id:
+            self.manager.clear_logs(self.active_id)
+            self._render_full_log()
 
     def _poll_events(self) -> None:
         dirty = False

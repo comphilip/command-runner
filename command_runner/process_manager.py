@@ -3,7 +3,6 @@ from __future__ import annotations
 import locale
 import os
 import queue
-import shlex
 import signal
 import subprocess
 import threading
@@ -27,6 +26,7 @@ class Runtime:
     stdout: deque[LogLine] = field(default_factory=lambda: deque(maxlen=1000))
     stderr: deque[LogLine] = field(default_factory=lambda: deque(maxlen=1000))
     combined: deque[LogLine] = field(default_factory=lambda: deque(maxlen=1000))
+    cleared_through: int = 0
 
 
 class ProcessManager:
@@ -67,17 +67,14 @@ class ProcessManager:
             cwd = Path(config.working_directory).expanduser()
             if not cwd.is_dir():
                 raise FileNotFoundError(f"Working directory does not exist: {cwd}")
-            shell = config.execution_mode == "shell"
             if os.name == "nt":
-                args: str | list[str] = config.command_line
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP
             else:
-                args = config.command_line if shell else shlex.split(config.command_line)
                 flags = 0
             process = subprocess.Popen(
-                args,
+                config.command_line,
                 cwd=str(cwd),
-                shell=shell,
+                shell=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -141,6 +138,15 @@ class ProcessManager:
             getattr(runtime, stream).append(line)
             runtime.combined.append(line)
         self.events.put(("log", command_id, line))
+
+    def clear_logs(self, command_id: str) -> None:
+        with self._lock:
+            runtime = self.runtime(command_id)
+            if runtime.combined:
+                runtime.cleared_through = runtime.combined[-1].sequence
+            runtime.stdout.clear()
+            runtime.stderr.clear()
+            runtime.combined.clear()
 
     def _wait(self, command_id: str, generation: int, process: subprocess.Popen) -> None:
         code = process.wait()

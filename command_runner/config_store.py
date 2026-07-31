@@ -22,13 +22,17 @@ class ConfigStore:
 
     def load(self) -> tuple[list[CommandConfig], dict[str, Any]]:
         if not self.path.exists():
-            return [], {"wrap_lines": True, "auto_scroll": True}
+            return [], {"wrap_lines": False, "auto_scroll": True}
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
-            commands = [CommandConfig(**item) for item in payload.get("commands", [])]
+            commands = []
+            for item in payload.get("commands", []):
+                item = dict(item)
+                item.pop("execution_mode", None)
+                commands.append(CommandConfig(**item))
             prefs = payload.get("preferences", {})
             return commands, {
-                "wrap_lines": bool(prefs.get("wrap_lines", True)),
+                "wrap_lines": bool(prefs.get("wrap_lines", False)),
                 "auto_scroll": bool(prefs.get("auto_scroll", True)),
             }
         except (OSError, ValueError, TypeError) as exc:

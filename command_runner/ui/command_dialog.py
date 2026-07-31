@@ -21,9 +21,6 @@ class CommandDialog(tk.Toplevel):
                 value=value.working_directory if value else str(Path.home())
             ),
             "command_line": tk.StringVar(value=value.command_line if value else ""),
-            "execution_mode": tk.StringVar(
-                value=value.execution_mode if value else "shell"
-            ),
             "encoding": tk.StringVar(value=value.encoding if value else "auto"),
         }
         frame = ttk.Frame(self, padding=14)
@@ -40,23 +37,13 @@ class CommandDialog(tk.Toplevel):
         ttk.Entry(frame, textvariable=self.vars["command_line"]).grid(
             row=2, column=1, columnspan=2, sticky="ew", pady=4
         )
-        ttk.Label(frame, text="Execution Mode").grid(row=3, column=0, sticky="w", pady=4)
-        modes = ttk.Frame(frame)
-        modes.grid(row=3, column=1, columnspan=2, sticky="w")
-        ttk.Radiobutton(
-            modes, text="Shell (supports .bat, pipes, and redirection)",
-            variable=self.vars["execution_mode"], value="shell"
-        ).pack(side="left")
-        ttk.Radiobutton(
-            modes, text="Direct", variable=self.vars["execution_mode"], value="direct"
-        ).pack(side="left", padx=12)
-        ttk.Label(frame, text="Output Encoding").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Label(frame, text="Output Encoding").grid(row=3, column=0, sticky="w", pady=4)
         ttk.Combobox(
             frame, textvariable=self.vars["encoding"],
             values=("auto", "utf-8", "gbk", "system"), state="readonly", width=15
-        ).grid(row=4, column=1, sticky="w", pady=4)
+        ).grid(row=3, column=1, sticky="w", pady=4)
         buttons = ttk.Frame(frame)
-        buttons.grid(row=5, column=0, columnspan=3, sticky="e", pady=(14, 0))
+        buttons.grid(row=4, column=0, columnspan=3, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Save", command=self._save).pack(side="right", padx=8)
         frame.columnconfigure(1, weight=1)
