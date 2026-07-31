@@ -76,6 +76,7 @@ class MainWindow:
         self.tree.pack(side="left", fill="both", expand=True)
         sy.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", self._selection_changed)
+        self.tree.bind("<Double-1>", self._row_double_clicked)
         options = ttk.Frame(bottom)
         options.pack(fill="x")
         for text, value in (("Combined", "combined"), ("stdout", "stdout"), ("stderr", "stderr")):
@@ -209,6 +210,16 @@ class MainWindow:
             self.active_id = new_id
             self._render_full_log()
         self._update_action_buttons()
+
+    def _row_double_clicked(self, event) -> None:
+        command_id = self.tree.identify_row(event.y)
+        if not command_id:
+            return
+        self.tree.selection_set(command_id)
+        if self.manager.runtime(command_id).state in {
+            State.STOPPED, State.EXITED, State.FAILED
+        }:
+            self.edit()
 
     def _update_action_buttons(self) -> None:
         """Enable actions only when at least one selected command can use them."""
