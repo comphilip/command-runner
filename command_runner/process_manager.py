@@ -200,13 +200,17 @@ class ProcessManager:
             pass
 
         try:
-            if job:
-                job.terminate()
-            elif os.name == "nt":
+            if os.name == "nt":
+                # Always ask Windows to kill the complete PID tree. A child can
+                # start before the shell has been assigned to the Job Object.
                 subprocess.run(
                     ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
                 )
+                # Also terminate the Job Object to catch descendants that have
+                # already been assigned but are no longer reachable from the PID.
+                if job:
+                    job.terminate()
             else:
                 os.killpg(process.pid, signal.SIGKILL)
         except (OSError, subprocess.SubprocessError):
