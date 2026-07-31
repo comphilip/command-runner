@@ -85,7 +85,7 @@ class MainWindow:
         for text, key, value in (
             ("Combined", "M", "combined"),
             ("stdout", "U", "stdout"),
-            ("stderr", "O", "stderr"),
+            ("Standard error", "N", "stderr"),
         ):
             radio = ttk.Radiobutton(
                 options, text=text, value=value, variable=self.log_view,
