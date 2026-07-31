@@ -29,7 +29,7 @@ def test_capture_stdout_and_stderr(tmp_path: Path):
     manager = ProcessManager()
     code = "import sys;print('out',flush=True);print('err',file=sys.stderr,flush=True)"
     command = CommandConfig(
-        "capture", str(tmp_path), f'{sys.executable} -c "{code}"', "shell", "utf-8"
+        "capture", str(tmp_path), f'{sys.executable} -c "{code}"', "utf-8"
     )
     manager.start(command)
     wait_until(lambda: manager.runtime(command.id).state in {State.EXITED, State.FAILED})
@@ -44,7 +44,7 @@ def test_stop_process(tmp_path: Path):
     manager = ProcessManager()
     code = "import time;print('ready',flush=True);time.sleep(30)"
     command = CommandConfig(
-        "sleeper", str(tmp_path), f'{sys.executable} -c "{code}"', "shell", "utf-8"
+        "sleeper", str(tmp_path), f'{sys.executable} -c "{code}"', "utf-8"
     )
     manager.start(command)
     wait_until(lambda: manager.runtime(command.id).state == State.RUNNING)

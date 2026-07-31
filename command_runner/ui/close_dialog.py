@@ -1,31 +1,40 @@
 import tkinter as tk
 from tkinter import ttk
 
+from .accessibility import add_control_mnemonic
+from .window_utils import center_over_parent
+
 
 class CloseDialog(tk.Toplevel):
     def __init__(self, parent, count: int) -> None:
         super().__init__(parent)
-        self.title("仍有命令正在运行")
+        self.title("Commands Are Still Running")
         self.resizable(False, False)
         self.result = "cancel"
         box = ttk.Frame(self, padding=18)
         box.pack(fill="both", expand=True)
         ttk.Label(
-            box, text=f"仍有 {count} 个命令正在运行，请选择操作。"
+            box, text=f"{count} command(s) are still running. Choose an action."
         ).pack(anchor="w", pady=(0, 16))
         buttons = ttk.Frame(box)
         buttons.pack()
-        ttk.Button(
-            buttons, text="关闭命令并退出", command=lambda: self._choose("exit")
-        ).pack(side="left")
-        cancel = ttk.Button(
-            buttons, text="取消", command=lambda: self._choose("cancel")
+        stop_and_exit = ttk.Button(
+            buttons, text="Stop Commands and Exit", command=lambda: self._choose("exit")
         )
+        add_control_mnemonic(self, stop_and_exit, "Stop Commands and Exit", "S")
+        stop_and_exit.pack(side="left")
+        cancel = ttk.Button(
+            buttons, text="Cancel", command=lambda: self._choose("cancel")
+        )
+        add_control_mnemonic(self, cancel, "Cancel", "C")
         cancel.pack(side="left", padx=8)
-        ttk.Button(
-            buttons, text="最小化到托盘", command=lambda: self._choose("tray")
-        ).pack(side="left")
+        minimize = ttk.Button(
+            buttons, text="Minimize to Tray", command=lambda: self._choose("tray")
+        )
+        add_control_mnemonic(self, minimize, "Minimize to Tray", "M")
+        minimize.pack(side="left")
         self.transient(parent)
+        center_over_parent(self, parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", lambda: self._choose("cancel"))
         self.bind("<Escape>", lambda _e: self._choose("cancel"))

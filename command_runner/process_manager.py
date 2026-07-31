@@ -3,7 +3,6 @@ from __future__ import annotations
 import locale
 import os
 import queue
-import shlex
 import signal
 import subprocess
 import threading
@@ -27,6 +26,7 @@ class Runtime:
     stdout: deque[LogLine] = field(default_factory=lambda: deque(maxlen=1000))
     stderr: deque[LogLine] = field(default_factory=lambda: deque(maxlen=1000))
     combined: deque[LogLine] = field(default_factory=lambda: deque(maxlen=1000))
+    cleared_through: int = 0
 
 
 class ProcessManager:
@@ -66,18 +66,15 @@ class ProcessManager:
         try:
             cwd = Path(config.working_directory).expanduser()
             if not cwd.is_dir():
-                raise FileNotFoundError(f"工作目录不存在: {cwd}")
-            shell = config.execution_mode == "shell"
+                raise FileNotFoundError(f"Working directory does not exist: {cwd}")
             if os.name == "nt":
-                args: str | list[str] = config.command_line
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP
             else:
-                args = config.command_line if shell else shlex.split(config.command_line)
                 flags = 0
             process = subprocess.Popen(
-                args,
+                config.command_line,
                 cwd=str(cwd),
-                shell=shell,
+                shell=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -99,7 +96,7 @@ class ProcessManager:
                     job = None
                     self._append_log(
                         config.id, "stderr",
-                        f"[Command Runner] Job Object 不可用，将使用 taskkill 作为停止后备: {exc}",
+                        f"[Command Runner] Job Object unavailable; using taskkill as a fallback: {exc}",
                     )
             with self._lock:
                 if runtime.generation != generation:
@@ -118,7 +115,7 @@ class ProcessManager:
                 target=self._wait, args=(config.id, generation, process), daemon=True
             ).start()
         except Exception as exc:
-            self._append_log(config.id, "stderr", f"[Command Runner] 启动失败: {exc}")
+            self._append_log(config.id, "stderr", f"[Command Runner] Failed to start: {exc}")
             with self._lock:
                 runtime.state, runtime.exit_code = State.FAILED, -1
             self.events.put(("state", config.id))
@@ -142,11 +139,29 @@ class ProcessManager:
             runtime.combined.append(line)
         self.events.put(("log", command_id, line))
 
-    def _wait(self, command_id: str, generation: int, process: subprocess.Popen) -> None:
-        code = process.wait()
+    def clear_logs(self, command_id: str) -> None:
         with self._lock:
             runtime = self.runtime(command_id)
-            if runtime.generation != generation:
+            if runtime.combined:
+                runtime.cleared_through = runtime.combined[-1].sequence
+            runtime.stdout.clear()
+            runtime.stderr.clear()
+            runtime.combined.clear()
+
+    def _wait(self, command_id: str, generation: int, process: subprocess.Popen) -> None:
+        code = process.wait()
+        self._finalize_process(command_id, generation, process, code)
+
+    def _finalize_process(
+        self,
+        command_id: str,
+        generation: int,
+        process: subprocess.Popen,
+        code: int,
+    ) -> None:
+        with self._lock:
+            runtime = self.runtime(command_id)
+            if runtime.generation != generation or runtime.process is not process:
                 return
             was_stopping = runtime.state == State.STOPPING
             runtime.exit_code, runtime.pid, runtime.process = code, None, None
@@ -178,22 +193,58 @@ class ProcessManager:
                 process.send_signal(signal.CTRL_BREAK_EVENT)
             else:
                 os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=timeout)
+            code = process.wait(timeout=timeout)
+            self._finalize_process(command_id, generation, process, code)
             return
-        except (subprocess.TimeoutExpired, PermissionError, ProcessLookupError):
+        except (OSError, subprocess.SubprocessError):
             pass
+
         try:
-            if job:
-                job.terminate()
-            elif os.name == "nt":
+            if os.name == "nt":
+                # Always ask Windows to kill the complete PID tree. A child can
+                # start before the shell has been assigned to the Job Object.
                 subprocess.run(
                     ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
                 )
+                # Also terminate the Job Object to catch descendants that have
+                # already been assigned but are no longer reachable from the PID.
+                if job:
+                    job.terminate()
             else:
                 os.killpg(process.pid, signal.SIGKILL)
-        except (OSError, ProcessLookupError):
+        except (OSError, subprocess.SubprocessError):
             pass
+
+        try:
+            code = process.wait(timeout=max(1.0, timeout))
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                code = process.wait(timeout=2.0)
+            except (OSError, subprocess.SubprocessError):
+                self._stop_failed(command_id, generation, process)
+                return
+        self._finalize_process(command_id, generation, process, code)
+
+    def _stop_failed(
+        self, command_id: str, generation: int, process: subprocess.Popen
+    ) -> None:
+        with self._lock:
+            runtime = self.runtime(command_id)
+            if (
+                runtime.generation != generation
+                or runtime.process is not process
+                or runtime.state != State.STOPPING
+            ):
+                return
+            runtime.state = State.RUNNING
+        self._append_log(
+            command_id,
+            "stderr",
+            "[Command Runner] Unable to stop the command process.",
+        )
+        self.events.put(("state", command_id))
 
     def restart(self, config: CommandConfig) -> None:
         runtime = self.runtime(config.id)
