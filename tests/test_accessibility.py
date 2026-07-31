@@ -17,8 +17,8 @@ class FakeWidget:
         self.invocations = 0
         self.focused = False
 
-    def configure(self, **options):
-        self.options.update(options)
+    def __setitem__(self, key, value):
+        self.options[key] = value
 
     def invoke(self):
         self.invocations += 1

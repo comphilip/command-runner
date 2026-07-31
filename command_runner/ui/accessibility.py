@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import Any, Protocol
 
-if TYPE_CHECKING:
-    import tkinter as tk
+
+class Underlined(Protocol):
+    def __setitem__(self, key: str, value: object) -> None: ...
+
+
+class Invokable(Underlined, Protocol):
+    def invoke(self) -> object: ...
+
+
+class Focusable(Protocol):
+    def focus_set(self) -> object: ...
 
 
 def _underline_index(text: str, key: str) -> int:
@@ -17,7 +26,7 @@ def _underline_index(text: str, key: str) -> int:
     return index
 
 
-def _bind_alt(window: tk.Misc, key: str, action: Callable[[], object]) -> None:
+def _bind_alt(window: Any, key: str, action: Callable[[], object]) -> None:
     def activate(_event=None) -> str:
         action()
         return "break"
@@ -27,16 +36,20 @@ def _bind_alt(window: tk.Misc, key: str, action: Callable[[], object]) -> None:
 
 
 def add_control_mnemonic(
-    window: tk.Misc, widget: tk.Misc, text: str, key: str
+    window: Any, widget: Invokable, text: str, key: str
 ) -> None:
     """Underline a control mnemonic and invoke the control with Alt+key."""
-    widget.configure(underline=_underline_index(text, key))
+    widget["underline"] = _underline_index(text, key)
     _bind_alt(window, key, widget.invoke)
 
 
 def add_label_mnemonic(
-    window: tk.Misc, label: tk.Misc, text: str, key: str, target: tk.Misc
+    window: Any,
+    label: Underlined,
+    text: str,
+    key: str,
+    target: Focusable,
 ) -> None:
     """Underline a label mnemonic and focus its field with Alt+key."""
-    label.configure(underline=_underline_index(text, key))
+    label["underline"] = _underline_index(text, key)
     _bind_alt(window, key, target.focus_set)
