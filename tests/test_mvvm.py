@@ -143,6 +143,21 @@ def test_main_view_model_persistence_and_delete(tmp_path: Path):
     assert store.saved[-1][1] == Preferences(False, True)
 
 
+def test_main_view_model_starts_only_automatic_commands(tmp_path: Path):
+    master = tk.Tcl()
+    automatic = CommandConfig("auto", str(tmp_path), "echo auto", auto_start=True)
+    manual = CommandConfig("manual", str(tmp_path), "echo manual")
+    manager = FakeManager()
+    view_model = MainWindowViewModel(
+        master, FakeStore([automatic, manual]), manager
+    )
+
+    view_model.start_automatic()
+
+    assert manager.calls == [("start", automatic.id)]
+    assert [row.auto_start for row in view_model.rows] == [True, False]
+
+
 def test_main_view_model_projects_typed_log_events(tmp_path: Path):
     master = tk.Tcl()
     command = CommandConfig("one", str(tmp_path), "echo one")
@@ -168,6 +183,7 @@ def test_command_dialog_view_model_validates_and_preserves_id(tmp_path: Path):
     view_model = CommandDialogViewModel(master, command)
     view_model.name.set("  new  ")
     view_model.command_line.set("  echo new  ")
+    view_model.auto_start.set(True)
 
     result = view_model.validate()
 
@@ -176,6 +192,7 @@ def test_command_dialog_view_model_validates_and_preserves_id(tmp_path: Path):
     assert result.value.id == command.id
     assert result.value.name == "new"
     assert result.value.command_line == "echo new"
+    assert result.value.auto_start is True
 
 
 def test_command_dialog_view_model_rejects_invalid_values(tmp_path: Path):

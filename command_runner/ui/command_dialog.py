@@ -68,6 +68,13 @@ class CommandDialog(simpledialog.Dialog):
         add_label_mnemonic(
             self, encoding_label, "Output Encoding", "O", encoding
         )
+        auto_start = ttk.Checkbutton(
+            master,
+            text="Auto Start",
+            variable=self.view_model.auto_start,
+        )
+        auto_start.grid(row=4, column=1, sticky="w", pady=4)
+        add_control_mnemonic(self, auto_start, "Auto Start", "A")
         master.columnconfigure(1, weight=1)
         return name
 
