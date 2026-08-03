@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.3
+* change version to 0.1.3.0
+* Command: add auto_start, auto start command on application starts
+
 ## v0.1.2
 * change version to 0.1.2.0
 * resource saving: remove gui resource on minimal to tray. remvoe tray resource on show main window
