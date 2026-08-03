@@ -18,7 +18,7 @@ def wait_until(predicate, timeout=5):
 
 def test_config_round_trip(tmp_path: Path):
     store = ConfigStore(tmp_path / "commands.json")
-    command = CommandConfig("demo", str(tmp_path), "echo hello")
+    command = CommandConfig("demo", str(tmp_path), "echo hello", auto_start=True)
     store.save([command], {"wrap_lines": False, "auto_scroll": True})
     commands, preferences = store.load()
     assert commands == [command]

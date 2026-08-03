@@ -75,7 +75,7 @@ class MainWindow:
         top, bottom = ttk.Frame(pane), ttk.Frame(pane)
         pane.add(top, weight=2)
         pane.add(bottom, weight=3)
-        columns = ("name", "state", "pid", "exit", "cwd")
+        columns = ("name", "state", "pid", "exit", "auto_start", "cwd")
         self.tree = ttk.Treeview(
             top, columns=columns, show="headings", selectmode="extended"
         )
@@ -84,9 +84,17 @@ class MainWindow:
             "state": "Status",
             "pid": "PID",
             "exit": "Exit Code",
+            "auto_start": "Auto Start",
             "cwd": "Working Directory",
         }
-        widths = {"name": 180, "state": 100, "pid": 80, "exit": 70, "cwd": 500}
+        widths = {
+            "name": 180,
+            "state": 100,
+            "pid": 80,
+            "exit": 70,
+            "auto_start": 80,
+            "cwd": 420,
+        }
         for column in columns:
             self.tree.heading(column, text=labels[column])
             self.tree.column(column, width=widths[column], anchor="w")
@@ -224,6 +232,7 @@ class MainWindow:
                 row.state.value,
                 row.pid or "",
                 "" if row.exit_code is None else row.exit_code,
+                "Yes" if row.auto_start else "No",
                 row.working_directory,
             )
             if row.id in existing:

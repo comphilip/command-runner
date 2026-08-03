@@ -21,6 +21,7 @@ class Application:
         self.window: MainWindow | None = None
         self.tray: TrayManager | None = None
         self._exit_poll: str | None = None
+        self.view_model.start_automatic()
         self.show_window()
 
     def show_window(self) -> None:

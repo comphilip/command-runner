@@ -34,6 +34,7 @@ class CommandRow:
     pid: int | None
     exit_code: int | None
     working_directory: str
+    auto_start: bool
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,11 @@ class MainWindowViewModel:
         for item in self.commands:
             self.manager.start(item)
 
+    def start_automatic(self) -> None:
+        for item in self.commands:
+            if item.auto_start:
+                self.manager.start(item)
+
     def stop_all(self) -> None:
         for command_id in self.manager.running_ids():
             self.manager.stop(command_id)
@@ -190,6 +196,7 @@ class MainWindowViewModel:
                 pid=runtime.pid,
                 exit_code=runtime.exit_code,
                 working_directory=item.working_directory,
+                auto_start=item.auto_start,
             )
             for item in self.commands
         )
@@ -283,6 +290,7 @@ class CommandDialogViewModel:
         )
         self.command_line = tk.StringVar(master, value.command_line if value else "")
         self.encoding = tk.StringVar(master, value.encoding if value else "auto")
+        self.auto_start = tk.BooleanVar(master, value.auto_start if value else False)
 
     def validate(self) -> ValidationResult:
         values = {
@@ -290,6 +298,7 @@ class CommandDialogViewModel:
             "working_directory": self.working_directory.get().strip(),
             "command_line": self.command_line.get().strip(),
             "encoding": self.encoding.get().strip(),
+            "auto_start": self.auto_start.get(),
         }
         if not values["name"] or not values["command_line"]:
             return ValidationResult(error="Name and command line are required.")

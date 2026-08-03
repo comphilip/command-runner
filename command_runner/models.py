@@ -31,6 +31,7 @@ class CommandConfig:
     command_line: str
     encoding: str = "auto"
     id: str = ""
+    auto_start: bool = False
 
     def __post_init__(self) -> None:
         if not self.id:
