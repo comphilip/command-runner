@@ -104,6 +104,21 @@ class MainWindow:
         scrollbar.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", self._selection_changed)
         self.tree.bind("<Double-1>", self._row_double_clicked)
+        # Do not bind Button-1 here: ttk.Treeview's class bindings provide the
+        # native Ctrl-click and Shift-click selection behaviour.
+        self.tree.bind("<Control-a>", self._tree_select_all)
+        self.tree.bind("<Control-A>", self._tree_select_all)
+        self.tree.bind("<Shift-Up>", self._tree_extend_up)
+        self.tree.bind("<Shift-Down>", self._tree_extend_down)
+        self.tree.bind("<Control-Up>", self._tree_move_focus_up)
+        self.tree.bind("<Control-Down>", self._tree_move_focus_down)
+        self.tree.bind("<Home>", self._tree_select_boundary_first)
+        self.tree.bind("<End>", self._tree_select_boundary_last)
+        self.tree.bind("<Control-Home>", self._tree_focus_boundary_first)
+        self.tree.bind("<Control-End>", self._tree_focus_boundary_last)
+        self.tree.bind("<Return>", self._tree_activate)
+        self.tree.bind("<Delete>", self._tree_delete)
+        self.tree.bind("<space>", self._tree_toggle_focus_selection)
 
         options = ttk.Frame(bottom)
         options.pack(fill="x")
@@ -222,6 +237,118 @@ class MainWindow:
             self.view_model.set_selection([command_id])
             if self.view_model.action_enabled["Edit"].get():
                 self.edit()
+
+    def _tree_select_all(self, _event: tk.Event) -> str:
+        children = self.tree.get_children("")
+        if children:
+            self.tree.selection_set(children)
+            self.tree.focus(children[0])
+            self.tree.see(children[0])
+        return "break"
+
+    def _tree_extend(self, direction: int) -> str:
+        children = self.tree.get_children("")
+        if not children:
+            return "break"
+        current = self.tree.focus() or (
+            self.tree.selection()[-1] if self.tree.selection() else children[0]
+        )
+        try:
+            index = children.index(current)
+        except ValueError:
+            index = 0
+        target_index = max(0, min(len(children) - 1, index + direction))
+        target = children[target_index]
+
+        # Tk's Treeview class binding already maintains the selection anchor
+        # for Shift-click/Shift-arrow.  Use the focused item as the anchor for
+        # the first explicit extension, and retain the current range after it.
+        selected = list(self.tree.selection())
+        anchor = (
+            selected[0] if direction < 0 else selected[-1]
+        ) if selected else current
+        if current in selected and len(selected) > 1:
+            anchor = selected[0] if target_index < index else selected[-1]
+        start, end = sorted((children.index(anchor), target_index))
+        self.tree.selection_set(children[start : end + 1])
+        self.tree.focus(target)
+        self.tree.see(target)
+        return "break"
+
+    def _tree_extend_up(self, _event: tk.Event) -> str:
+        return self._tree_extend(-1)
+
+    def _tree_extend_down(self, _event: tk.Event) -> str:
+        return self._tree_extend(1)
+
+    def _tree_move_focus(self, direction: int) -> str:
+        children = self.tree.get_children("")
+        if not children:
+            return "break"
+        current = self.tree.focus() or (
+            self.tree.selection()[0] if self.tree.selection() else children[0]
+        )
+        try:
+            index = children.index(current)
+        except ValueError:
+            index = 0
+        target = children[max(0, min(len(children) - 1, index + direction))]
+        self.tree.focus(target)
+        self.tree.see(target)
+        return "break"
+
+    def _tree_move_focus_up(self, _event: tk.Event) -> str:
+        return self._tree_move_focus(-1)
+
+    def _tree_move_focus_down(self, _event: tk.Event) -> str:
+        return self._tree_move_focus(1)
+
+    def _tree_boundary(self, last: bool, select: bool) -> str:
+        children = self.tree.get_children("")
+        if not children:
+            return "break"
+        target = children[-1] if last else children[0]
+        self.tree.focus(target)
+        if select:
+            self.tree.selection_set(target)
+        self.tree.see(target)
+        return "break"
+
+    def _tree_select_boundary_first(self, _event: tk.Event) -> str:
+        return self._tree_boundary(last=False, select=True)
+
+    def _tree_select_boundary_last(self, _event: tk.Event) -> str:
+        return self._tree_boundary(last=True, select=True)
+
+    def _tree_focus_boundary_first(self, _event: tk.Event) -> str:
+        return self._tree_boundary(last=False, select=False)
+
+    def _tree_focus_boundary_last(self, _event: tk.Event) -> str:
+        return self._tree_boundary(last=True, select=False)
+
+    def _tree_activate(self, _event: tk.Event) -> str:
+        if len(self.tree.selection()) == 1 and self.view_model.action_enabled["Edit"].get():
+            self.edit()
+        else:
+            self.view_model.start_selected()
+        return "break"
+
+    def _tree_delete(self, _event: tk.Event) -> str:
+        self.delete()
+        return "break"
+
+    def _tree_toggle_focus_selection(self, _event: tk.Event) -> str:
+        children = self.tree.get_children("")
+        if not children:
+            return "break"
+        item = self.tree.focus() or children[0]
+        if item in self.tree.selection():
+            self.tree.selection_remove(item)
+        else:
+            self.tree.selection_add(item)
+        self.tree.focus(item)
+        self.tree.see(item)
+        return "break"
 
     def _render_rows(self, *_args: object) -> None:
         selection = set(self.tree.selection())

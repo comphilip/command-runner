@@ -3,6 +3,7 @@ from __future__ import annotations
 import locale
 import os
 import queue
+import shlex
 import signal
 import subprocess
 import threading
@@ -100,10 +101,11 @@ class ProcessManager:
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP
             else:
                 flags = 0
+            command = shlex.split(config.command_line)
             process = subprocess.Popen(
-                config.command_line,
+                command,
                 cwd=str(cwd),
-                shell=True,
+                shell=False,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
