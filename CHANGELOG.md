@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.4
+* main_window: more keyboard operation support for treeview
+* remove version in requirements.txt, move pyinstaller to requirements-dev.txt
+* process_manager.py: start process with shell=False
+* .github/workflows/release.yml: install requirements-dev.txt
+
 ## v0.1.3
 * change version to 0.1.3.0
 * Command: add auto_start, auto start command on application starts
