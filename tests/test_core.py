@@ -40,6 +40,21 @@ def test_capture_stdout_and_stderr(tmp_path: Path):
     assert len(runtime.combined) == 2
 
 
+def test_command_line_is_split_without_shell(tmp_path: Path):
+    manager = ProcessManager()
+    command = CommandConfig(
+        "args",
+        str(tmp_path),
+        f'{sys.executable} -c "import sys; print(repr(sys.argv[1:]))" "hello world" "&& echo unsafe"',
+        "utf-8",
+    )
+    manager.start(command)
+    wait_until(lambda: manager.runtime(command.id).state in {State.EXITED, State.FAILED})
+    runtime = manager.runtime(command.id)
+    assert runtime.exit_code == 0
+    assert runtime.stdout[0].text == "['hello world', '&& echo unsafe']"
+
+
 def test_stop_process(tmp_path: Path):
     manager = ProcessManager()
     code = "import time;print('ready',flush=True);time.sleep(30)"
