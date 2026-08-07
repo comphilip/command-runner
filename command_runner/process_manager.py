@@ -101,7 +101,9 @@ class ProcessManager:
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP
             else:
                 flags = 0
-            command = shlex.split(config.command_line)
+            command = config.command_line
+            if os.name != 'nt':
+                command = shlex.split(config.command_line)
             process = subprocess.Popen(
                 command,
                 cwd=str(cwd),
