@@ -98,7 +98,7 @@ class ProcessManager:
             if not cwd.is_dir():
                 raise FileNotFoundError(f"Working directory does not exist: {cwd}")
             if os.name == "nt":
-                flags = subprocess.CREATE_NEW_PROCESS_GROUP
+                flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             else:
                 flags = 0
             command = config.command_line
