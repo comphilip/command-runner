@@ -113,6 +113,9 @@ class MainWindowViewModel:
             self.log_view.trace_remove("write", self._log_view_trace)
         except tk.TclError:
             pass
+        close = getattr(self.manager, "close", None)
+        if close is not None:
+            close()
 
     def by_id(self, command_id: str) -> CommandConfig | None:
         return next((item for item in self.commands if item.id == command_id), None)
