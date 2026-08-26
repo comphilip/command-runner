@@ -164,10 +164,8 @@ class ProcessManager:
                 raise FileNotFoundError(f"Working directory does not exist: {cwd}")
             encoding = self._encoding(config.encoding)
             codecs.lookup(encoding)
-            command = self._split_command(config.command_line)
-            use_windows_shell = (
-                os.name == "nt"
-                and Path(command[0]).stem.lower() == "gpg-agent"
+            command = (
+                None if config.shell else self._split_command(config.command_line)
             )
             flags = 0
             startupinfo = None
@@ -185,14 +183,12 @@ class ProcessManager:
                 "startupinfo": startupinfo,
                 "start_new_session": os.name != "nt",
             }
-            if use_windows_shell:
-                # gpg-agent must be a child of cmd.exe on Windows.  This
-                # preserves the foreground-process ancestry that pinentry
-                # needs when it calls SetForegroundWindow.
+            if config.shell:
                 process = await asyncio.create_subprocess_shell(
                     config.command_line, **process_kwargs
                 )
             else:
+                assert command is not None
                 process = await asyncio.create_subprocess_exec(
                     *command, **process_kwargs
                 )

@@ -184,6 +184,7 @@ def test_command_dialog_view_model_validates_and_preserves_id(tmp_path: Path):
     view_model.name.set("  new  ")
     view_model.command_line.set("  echo new  ")
     view_model.auto_start.set(True)
+    view_model.shell.set(True)
 
     result = view_model.validate()
 
@@ -193,6 +194,7 @@ def test_command_dialog_view_model_validates_and_preserves_id(tmp_path: Path):
     assert result.value.name == "new"
     assert result.value.command_line == "echo new"
     assert result.value.auto_start is True
+    assert result.value.shell is True
 
 
 def test_command_dialog_view_model_rejects_invalid_values(tmp_path: Path):
