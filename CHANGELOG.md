@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## v0.1.5
 * change to version 0.1.5
-* process_manager.py: pass CREATE_NO_WINDOW flag
+* process_manager.py: launch gpg-agent through cmd.exe for pinentry foregrounding
 * build-windows.ps1: pip install requirements-dev.txt
 * process_manager.py: not shlex.split() in windows
 

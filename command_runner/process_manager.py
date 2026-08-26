@@ -165,18 +165,37 @@ class ProcessManager:
             encoding = self._encoding(config.encoding)
             codecs.lookup(encoding)
             command = self._split_command(config.command_line)
-            flags = 0
-            if os.name == "nt":
-                flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-            process = await asyncio.create_subprocess_exec(
-                *command,
-                cwd=str(cwd),
-                stdin=subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                creationflags=flags,
-                start_new_session=os.name != "nt",
+            use_windows_shell = (
+                os.name == "nt"
+                and Path(command[0]).stem.lower() == "gpg-agent"
             )
+            flags = 0
+            startupinfo = None
+            if os.name == "nt":
+                flags = subprocess.CREATE_NEW_PROCESS_GROUP
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            process_kwargs = {
+                "cwd": str(cwd),
+                "stdin": subprocess.DEVNULL,
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "creationflags": flags,
+                "startupinfo": startupinfo,
+                "start_new_session": os.name != "nt",
+            }
+            if use_windows_shell:
+                # gpg-agent must be a child of cmd.exe on Windows.  This
+                # preserves the foreground-process ancestry that pinentry
+                # needs when it calls SetForegroundWindow.
+                process = await asyncio.create_subprocess_shell(
+                    config.command_line, **process_kwargs
+                )
+            else:
+                process = await asyncio.create_subprocess_exec(
+                    *command, **process_kwargs
+                )
             job = self._create_job(config.id, process)
             with self._lock:
                 if runtime.generation != generation or self._closed:
