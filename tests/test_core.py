@@ -68,6 +68,12 @@ def test_command_line_is_split_without_shell(tmp_path: Path, manager: ProcessMan
     assert runtime.stdout[0].text == "['hello world', '&& echo unsafe']"
 
 
+def test_command_line_linefeeds_are_spaces_when_started():
+    assert ProcessManager._normalize_command_line(
+        "echo one\r\necho two\necho three"
+    ) == "echo one echo two echo three"
+
+
 def test_stop_process(tmp_path: Path, manager: ProcessManager):
     code = "import time;print('ready',flush=True);time.sleep(30)"
     command = CommandConfig(

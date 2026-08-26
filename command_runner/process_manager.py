@@ -164,8 +164,9 @@ class ProcessManager:
                 raise FileNotFoundError(f"Working directory does not exist: {cwd}")
             encoding = self._encoding(config.encoding)
             codecs.lookup(encoding)
+            command_line = self._normalize_command_line(config.command_line)
             command = (
-                None if config.shell else self._split_command(config.command_line)
+                None if config.shell else self._split_command(command_line)
             )
             flags = 0
             startupinfo = None
@@ -185,7 +186,7 @@ class ProcessManager:
             }
             if config.shell:
                 process = await asyncio.create_subprocess_shell(
-                    config.command_line, **process_kwargs
+                    command_line, **process_kwargs
                 )
             else:
                 assert command is not None
@@ -239,6 +240,14 @@ class ProcessManager:
             return [argv[index] for index in range(argc.value)]
         finally:
             kernel32.LocalFree(argv)
+
+    @staticmethod
+    def _normalize_command_line(command_line: str) -> str:
+        return (
+            command_line.replace("\r\n", " ")
+            .replace("\r", " ")
+            .replace("\n", " ")
+        )
 
     def _create_job(
         self, command_id: str, process: asyncio.subprocess.Process

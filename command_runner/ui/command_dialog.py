@@ -20,6 +20,7 @@ class CommandDialog(simpledialog.Dialog):
 
     def body(self, master: tk.Misc) -> tk.Widget:
         self.resizable(True, False)
+        master.pack_configure(fill="both", expand=True)
         self.view_model = CommandDialogViewModel(self, self.initial_value)
 
         name_label = ttk.Label(master, text="Name")
@@ -45,9 +46,11 @@ class CommandDialog(simpledialog.Dialog):
 
         command_label = ttk.Label(master, text="Command Line")
         command_label.grid(row=2, column=0, sticky="w", pady=4)
-        command_line = ttk.Entry(
-            master, textvariable=self.view_model.command_line
+        self._command_line_editor = tk.Text(master, height=4, wrap="word")
+        self._command_line_editor.insert(
+            "1.0", self.view_model.command_line.get()
         )
+        command_line = self._command_line_editor
         command_line.grid(
             row=2, column=1, columnspan=2, sticky="ew", pady=4
         )
@@ -95,7 +98,7 @@ class CommandDialog(simpledialog.Dialog):
         add_control_mnemonic(self, save, "Save", "S")
         save.pack(side="right", padx=8)
         self.bind("<Escape>", self.cancel)
-        self.bind("<Return>", lambda _event: self._save())
+        self.bind("<Control-Return>", lambda _event: self._save())
 
     def _browse(self) -> None:
         path = filedialog.askdirectory(
@@ -105,6 +108,9 @@ class CommandDialog(simpledialog.Dialog):
             self.view_model.working_directory.set(path)
 
     def _save(self) -> None:
+        self.view_model.command_line.set(
+            self._command_line_editor.get("1.0", "end-1c")
+        )
         result = self.view_model.validate()
         if not result.valid:
             messagebox.showwarning("Invalid Command", result.error, parent=self)
