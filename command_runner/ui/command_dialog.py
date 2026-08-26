@@ -46,14 +46,26 @@ class CommandDialog(simpledialog.Dialog):
 
         command_label = ttk.Label(master, text="Command Line")
         command_label.grid(row=2, column=0, sticky="w", pady=4)
-        self._command_line_editor = tk.Text(master, height=4, wrap="word")
+        command_editor_frame = ttk.Frame(master)
+        command_editor_frame.grid(
+            row=2, column=1, columnspan=2, sticky="nsew", pady=4
+        )
+        command_editor_frame.columnconfigure(0, weight=1)
+        self._command_line_editor = tk.Text(
+            command_editor_frame, height=4, wrap="word"
+        )
         self._command_line_editor.insert(
             "1.0", self.view_model.command_line.get()
         )
         command_line = self._command_line_editor
-        command_line.grid(
-            row=2, column=1, columnspan=2, sticky="ew", pady=4
+        command_line.grid(row=0, column=0, sticky="nsew")
+        command_scrollbar = ttk.Scrollbar(
+            command_editor_frame,
+            orient="vertical",
+            command=command_line.yview,
         )
+        command_scrollbar.grid(row=0, column=1, sticky="ns")
+        command_line.configure(yscrollcommand=command_scrollbar.set)
         add_label_mnemonic(
             self, command_label, "Command Line", "L", command_line
         )
