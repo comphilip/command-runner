@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.5
+* change to version 0.1.5
+* add Shell option for commands that need shell startup behavior
+* command dialog: sync content width with window width
+* command dialog: use a multiline editor for Command Line and replace linefeeds with spaces when starting commands
+* command dialog: add a scrollbar to the Command Line editor
+* process_manager.py: use asyncio for single-thread usage
+* fix gpgagent's pinentry-basic.exe bringing its window to the front
+* process_manager.py: pass CREATE_NO_WINDOW flag
+* build-windows.ps1: pip install requirements-dev.txt
+* process_manager.py: not shlex.split() in windows
+
 ## v0.1.4
 * main_window: more keyboard operation support for treeview
 * remove version in requirements.txt, move pyinstaller to requirements-dev.txt

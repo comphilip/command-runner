@@ -6,7 +6,7 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
 }
 
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
-& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+& .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean CommandRunner.spec
 
 Write-Host ""

@@ -113,6 +113,9 @@ class MainWindowViewModel:
             self.log_view.trace_remove("write", self._log_view_trace)
         except tk.TclError:
             pass
+        close = getattr(self.manager, "close", None)
+        if close is not None:
+            close()
 
     def by_id(self, command_id: str) -> CommandConfig | None:
         return next((item for item in self.commands if item.id == command_id), None)
@@ -291,6 +294,7 @@ class CommandDialogViewModel:
         self.command_line = tk.StringVar(master, value.command_line if value else "")
         self.encoding = tk.StringVar(master, value.encoding if value else "auto")
         self.auto_start = tk.BooleanVar(master, value.auto_start if value else False)
+        self.shell = tk.BooleanVar(master, value.shell if value else False)
 
     def validate(self) -> ValidationResult:
         values = {
@@ -299,6 +303,7 @@ class CommandDialogViewModel:
             "command_line": self.command_line.get().strip(),
             "encoding": self.encoding.get().strip(),
             "auto_start": self.auto_start.get(),
+            "shell": self.shell.get(),
         }
         if not values["name"] or not values["command_line"]:
             return ValidationResult(error="Name and command line are required.")
