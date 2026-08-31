@@ -21,7 +21,7 @@ if(NOT WIN32)
     message(FATAL_ERROR "Command Runner is currently supported on Windows only.")
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -49,6 +49,7 @@ target_link_libraries(CommandRunner
     PRIVATE
         nlohmann_json::nlohmann_json
         comctl32
+        gdi32
         ole32
         shell32
         user32

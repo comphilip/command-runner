@@ -1,15 +1,14 @@
 #include "core/config_store.h"
 
-#include <nlohmann/json.hpp>
-
 #include <windows.h>
 
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <iterator>
+#include <print>
 #include <stdexcept>
 #include <string>
 
@@ -20,27 +19,27 @@ using command_runner::ConfigData;
 using command_runner::ConfigStore;
 using command_runner::Preferences;
 
-std::filesystem::path test_root() {
-    wchar_t path[MAX_PATH]{};
-    const DWORD length = GetTempPathW(MAX_PATH, path);
-    if (length == 0 || length >= MAX_PATH) {
+std::filesystem::path testRoot() {
+    std::array<wchar_t, MAX_PATH> path{};
+    const DWORD length = GetTempPathW(static_cast<DWORD>(path.size()), path.data());
+    if (length == 0 || length >= path.size()) {
         throw std::runtime_error("GetTempPathW failed");
     }
     const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
-    return std::filesystem::path(path) /
+    return std::filesystem::path(std::wstring(path.data(), length)) /
            (L"CommandRunner.ConfigStore." + std::to_wstring(suffix));
 }
 
-void write_text(const std::filesystem::path& path, const std::string& value) {
+void writeText(const std::filesystem::path& path, const std::string& value) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     assert(output);
     output << value;
     assert(output.good());
 }
 
-void test_defaults_and_legacy_fields(const std::filesystem::path& root) {
+void testDefaultsAndLegacyFields(const std::filesystem::path& root) {
     const auto path = root / L"legacy.json";
-    write_text(path, R"json({
+    writeText(path, R"json({
       "version": 1,
       "commands": [{
         "id": "legacy-id",
@@ -55,42 +54,40 @@ void test_defaults_and_legacy_fields(const std::filesystem::path& root) {
     })json");
 
     const auto result = ConfigStore(path).load();
-    assert(result.succeeded());
-    assert(result.data.commands.size() == 1);
-    assert(result.data.commands[0].id == L"legacy-id");
-    assert(result.data.commands[0].name == L"Unicode 名称");
-    assert(!result.data.commands[0].auto_start);
-    assert(!result.data.commands[0].shell);
-    assert(result.data.preferences == Preferences(false, true));
+    assert(result.has_value());
+    assert(result->mCommands.size() == 1);
+    assert(result->mCommands[0].mId == L"legacy-id");
+    assert(result->mCommands[0].mName == L"Unicode 名称");
+    assert(!result->mCommands[0].mAutoStart);
+    assert(!result->mCommands[0].mShell);
+    assert(result->mPreferences == Preferences(false, true));
 }
 
-void test_round_trip_and_atomic_save(const std::filesystem::path& root) {
+void testRoundTripAndAtomicSave(const std::filesystem::path& root) {
     const auto path = root / L"round-trip.json";
     const CommandConfig command(L"演示", root.wstring(), L"echo \"hello world\"",
                                 "utf-8", L"stable-id", true, true);
     const ConfigData input{{command}, Preferences(true, false)};
 
-    std::wstring error;
-    assert(ConfigStore(path).save(input, &error));
-    assert(error.empty());
+    const auto saveResult = ConfigStore(path).save(input);
+    assert(saveResult.has_value());
     assert(!std::filesystem::exists(std::filesystem::path(path.wstring() + L".tmp")));
 
     const auto output = ConfigStore(path).load();
-    assert(output.succeeded());
-    assert(output.data.commands.size() == 1);
-    assert(output.data.commands[0] == command);
-    assert(output.data.preferences == input.preferences);
+    assert(output.has_value());
+    assert(output->mCommands.size() == 1);
+    assert(output->mCommands[0] == command);
+    assert(output->mPreferences == input.mPreferences);
 }
 
-void test_corrupt_file_is_safe_and_untouched(const std::filesystem::path& root) {
+void testCorruptFileIsSafeAndUntouched(const std::filesystem::path& root) {
     const auto path = root / L"corrupt.json";
     const std::string original = "{ not valid json";
-    write_text(path, original);
+    writeText(path, original);
 
     const auto result = ConfigStore(path).load();
-    assert(!result.succeeded());
-    assert(result.data.commands.empty());
-    assert(result.data.preferences == Preferences(false, true));
+    assert(!result.has_value());
+    assert(!result.error().empty());
 
     std::ifstream input(path, std::ios::binary);
     const std::string after((std::istreambuf_iterator<char>(input)),
@@ -98,15 +95,15 @@ void test_corrupt_file_is_safe_and_untouched(const std::filesystem::path& root) 
     assert(after == original);
 }
 
-void test_save_failure_does_not_replace_destination(const std::filesystem::path& root) {
-    const auto parent_that_is_a_file = root / L"not-a-directory";
-    write_text(parent_that_is_a_file, "keep me");
-    const auto path = parent_that_is_a_file / L"commands.json";
+void testSaveFailureDoesNotReplaceDestination(const std::filesystem::path& root) {
+    const auto parentThatIsAFile = root / L"not-a-directory";
+    writeText(parentThatIsAFile, "keep me");
+    const auto path = parentThatIsAFile / L"commands.json";
 
-    std::wstring error;
-    assert(!ConfigStore(path).save(ConfigData{}, &error));
-    assert(!error.empty());
-    std::ifstream input(parent_that_is_a_file, std::ios::binary);
+    const auto saveResult = ConfigStore(path).save(ConfigData{});
+    assert(!saveResult.has_value());
+    assert(!saveResult.error().empty());
+    std::ifstream input(parentThatIsAFile, std::ios::binary);
     const std::string contents((std::istreambuf_iterator<char>(input)),
                                std::istreambuf_iterator<char>());
     assert(contents == "keep me");
@@ -115,15 +112,15 @@ void test_save_failure_does_not_replace_destination(const std::filesystem::path&
 }  // namespace
 
 int main() {
-    const auto root = test_root();
+    const auto root = testRoot();
     std::filesystem::create_directories(root);
     try {
-        test_defaults_and_legacy_fields(root);
-        test_round_trip_and_atomic_save(root);
-        test_corrupt_file_is_safe_and_untouched(root);
-        test_save_failure_does_not_replace_destination(root);
+        testDefaultsAndLegacyFields(root);
+        testRoundTripAndAtomicSave(root);
+        testCorruptFileIsSafeAndUntouched(root);
+        testSaveFailureDoesNotReplaceDestination(root);
         std::filesystem::remove_all(root);
-        std::cout << "ConfigStore tests passed\n";
+        std::print("ConfigStore tests passed\n");
         return 0;
     } catch (...) {
         std::filesystem::remove_all(root);

@@ -3,46 +3,42 @@
 #include "core/models.h"
 
 #include <filesystem>
-#include <optional>
+#include <expected>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace command_runner {
 
 struct ConfigData {
-    std::vector<CommandConfig> commands;
-    Preferences preferences;
+    std::vector<CommandConfig> mCommands;
+    Preferences mPreferences;
 
     friend bool operator==(const ConfigData&, const ConfigData&) = default;
 };
 
-struct ConfigLoadResult {
-    ConfigData data;
-    std::optional<std::wstring> error;
-
-    [[nodiscard]] bool succeeded() const noexcept { return !error.has_value(); }
-};
+using ConfigLoadResult = std::expected<ConfigData, std::wstring>;
+using ConfigSaveResult = std::expected<void, std::wstring>;
 
 class ConfigStore {
 public:
-    explicit ConfigStore(std::filesystem::path path = default_config_path());
+    explicit ConfigStore(std::filesystem::path path = defaultConfigPath());
 
-    [[nodiscard]] static std::filesystem::path default_config_path();
-    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+    [[nodiscard]] static std::filesystem::path defaultConfigPath();
+    [[nodiscard]] const std::filesystem::path& path() const noexcept { return mPath; }
 
-    // A failed load returns safe defaults and an English diagnostic. It never
-    // changes the file, allowing the UI to report Configuration Error safely.
-    [[nodiscard]] ConfigLoadResult load() const noexcept;
+    // A failed load returns an English diagnostic and never changes the file.
+    // Callers can use ConfigData{} when they need safe defaults.
+    [[nodiscard]] ConfigLoadResult load() const;
 
     // Writes beside the destination and replaces it only after the new JSON
     // is fully flushed. The existing file is left untouched on failure.
-    [[nodiscard]] bool save(const ConfigData& data, std::wstring* error = nullptr) const noexcept;
-    [[nodiscard]] bool save(const std::vector<CommandConfig>& commands,
-                            const Preferences& preferences,
-                            std::wstring* error = nullptr) const noexcept;
+    [[nodiscard]] ConfigSaveResult save(const ConfigData& data) const;
+    [[nodiscard]] ConfigSaveResult save(std::span<const CommandConfig> commands,
+                                        const Preferences& preferences) const;
 
 private:
-    std::filesystem::path path_;
+    std::filesystem::path mPath;
 };
 
 }  // namespace command_runner

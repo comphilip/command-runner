@@ -7,10 +7,12 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
+#include <exception>
 #include <fstream>
-#include <iterator>
+#include <limits>
 #include <sstream>
-#include <stdexcept>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -19,174 +21,287 @@ namespace {
 
 using json = nlohmann::json;
 
-std::wstring utf8_to_wide(const std::string& value) {
+constexpr int CONFIGURATION_VERSION = 1;
+constexpr std::size_t ERROR_MESSAGE_BUFFER_SIZE = 1024;
+constexpr std::size_t LOCAL_APP_DATA_BUFFER_SIZE = 32768;
+
+std::wstring fieldName(const char* name) {
+    const std::size_t length = std::char_traits<char>::length(name);
+    std::wstring result;
+    result.reserve(length);
+    for (std::size_t index = 0; index < length; ++index) {
+        result.push_back(static_cast<wchar_t>(name[index]));
+    }
+    return result;
+}
+
+std::wstring fieldTypeError(const char* name, const wchar_t* expectedType) {
+    return L"field '" + fieldName(name) + L"' must be " + expectedType;
+}
+
+std::expected<int, std::wstring> checkedWinLength(std::size_t length,
+                                                  const wchar_t* encoding) {
+    if (length > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return std::unexpected(std::wstring(encoding) + L" input is too large");
+    }
+    return static_cast<int>(length);
+}
+
+std::expected<std::wstring, std::wstring> utf8ToWide(std::string_view value) {
     if (value.empty()) {
-        return {};
+        return std::wstring{};
     }
-    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                                         value.data(), static_cast<int>(value.size()),
-                                         nullptr, 0);
+
+    const auto length = checkedWinLength(value.size(), L"UTF-8");
+    if (!length) {
+        return std::unexpected(length.error());
+    }
+
+    const int size = MultiByteToWideChar(CP_UTF8,
+                                         MB_ERR_INVALID_CHARS,
+                                         value.data(),
+                                         *length,
+                                         nullptr,
+                                         0);
     if (size <= 0) {
-        throw std::runtime_error("invalid UTF-8");
+        return std::unexpected(L"invalid UTF-8");
     }
+
     std::wstring result(static_cast<std::size_t>(size), L'\0');
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                            value.data(), static_cast<int>(value.size()),
-                            result.data(), size) != size) {
-        throw std::runtime_error("invalid UTF-8");
+    if (MultiByteToWideChar(CP_UTF8,
+                            MB_ERR_INVALID_CHARS,
+                            value.data(),
+                            *length,
+                            result.data(),
+                            size) != size) {
+        return std::unexpected(L"invalid UTF-8");
     }
     return result;
 }
 
-std::string wide_to_utf8(const std::wstring& value) {
+std::expected<std::string, std::wstring> wideToUtf8(std::wstring_view value) {
     if (value.empty()) {
-        return {};
+        return std::string{};
     }
-    const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
-                                         value.data(), static_cast<int>(value.size()),
-                                         nullptr, 0, nullptr, nullptr);
+
+    const auto length = checkedWinLength(value.size(), L"UTF-16");
+    if (!length) {
+        return std::unexpected(length.error());
+    }
+
+    const int size = WideCharToMultiByte(CP_UTF8,
+                                         WC_ERR_INVALID_CHARS,
+                                         value.data(),
+                                         *length,
+                                         nullptr,
+                                         0,
+                                         nullptr,
+                                         nullptr);
     if (size <= 0) {
-        throw std::runtime_error("invalid UTF-16");
+        return std::unexpected(L"invalid UTF-16");
     }
+
     std::string result(static_cast<std::size_t>(size), '\0');
-    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
-                            value.data(), static_cast<int>(value.size()),
-                            result.data(), size, nullptr, nullptr) != size) {
-        throw std::runtime_error("invalid UTF-16");
+    if (WideCharToMultiByte(CP_UTF8,
+                            WC_ERR_INVALID_CHARS,
+                            value.data(),
+                            *length,
+                            result.data(),
+                            size,
+                            nullptr,
+                            nullptr) != size) {
+        return std::unexpected(L"invalid UTF-16");
     }
     return result;
 }
 
-std::wstring last_error_message(DWORD error) {
-    wchar_t* buffer = nullptr;
-    const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER |
-                        FORMAT_MESSAGE_FROM_SYSTEM |
-                        FORMAT_MESSAGE_IGNORE_INSERTS;
-    const DWORD length = FormatMessageW(flags, nullptr, error, 0,
-                                        reinterpret_cast<wchar_t*>(&buffer), 0, nullptr);
-    std::wstring message = length != 0 ? std::wstring(buffer, length)
-                                      : L"Unknown Windows error";
-    if (buffer != nullptr) {
-        LocalFree(buffer);
-    }
+std::wstring lastErrorMessage(DWORD error) {
+    std::array<wchar_t, ERROR_MESSAGE_BUFFER_SIZE> buffer{};
+    const DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+    const DWORD length = FormatMessageW(flags,
+                                        nullptr,
+                                        error,
+                                        0,
+                                        buffer.data(),
+                                        static_cast<DWORD>(buffer.size()),
+                                        nullptr);
+    std::wstring message = length == 0 ? L"Unknown Windows error"
+                                      : std::wstring(buffer.data(), length);
     while (!message.empty() && (message.back() == L'\r' || message.back() == L'\n')) {
         message.pop_back();
     }
     return message;
 }
 
-std::wstring path_for_error(const std::filesystem::path& path) {
+std::wstring pathForError(const std::filesystem::path& path) {
     return path.empty() ? L"<empty path>" : path.wstring();
 }
 
-std::wstring exception_message(const std::exception& exception) {
-    try {
-        return utf8_to_wide(exception.what());
-    } catch (...) {
-        return L"Unexpected configuration error";
-    }
+std::wstring exceptionMessage(const std::exception& exception) {
+    const auto message = utf8ToWide(exception.what());
+    return message ? *message : L"Unexpected configuration error";
 }
 
-template <typename T>
-T required_value(const json& object, const char* name) {
+std::wstring errorForPath(const std::filesystem::path& path, const std::wstring& detail) {
+    return L"Unable to process configuration file '" + pathForError(path) + L"': " + detail;
+}
+
+std::expected<std::wstring, std::wstring> requiredString(const json& object,
+                                                          const char* name) {
     const auto iterator = object.find(name);
     if (iterator == object.end()) {
-        throw std::invalid_argument(std::string("missing required field '") + name + "'");
+        return std::unexpected(L"missing required field '" + fieldName(name) + L"'");
     }
     if (!iterator->is_string()) {
-        throw std::invalid_argument(std::string("field '") + name + "' must be a string");
+        return std::unexpected(fieldTypeError(name, L"a string"));
     }
-    return utf8_to_wide(iterator->get<std::string>());
+    return utf8ToWide(iterator->get<std::string>());
 }
 
-std::wstring optional_string(const json& object, const char* name, std::wstring default_value = {}) {
+std::expected<std::wstring, std::wstring> optionalString(const json& object,
+                                                         const char* name,
+                                                         std::wstring defaultValue = {}) {
     const auto iterator = object.find(name);
     if (iterator == object.end()) {
-        return default_value;
+        return defaultValue;
     }
     if (!iterator->is_string()) {
-        throw std::invalid_argument(std::string("field '") + name + "' must be a string");
+        return std::unexpected(fieldTypeError(name, L"a string"));
     }
-    return utf8_to_wide(iterator->get<std::string>());
+    return utf8ToWide(iterator->get<std::string>());
 }
 
-std::string optional_encoding(const json& object) {
+std::expected<std::string, std::wstring> optionalEncoding(const json& object) {
     const auto iterator = object.find("encoding");
     if (iterator == object.end()) {
-        return "auto";
+        return std::string{"auto"};
     }
     if (!iterator->is_string()) {
-        throw std::invalid_argument("field 'encoding' must be a string");
+        return std::unexpected(fieldTypeError("encoding", L"a string"));
     }
     return iterator->get<std::string>();
 }
 
-bool optional_bool(const json& object, const char* name, bool default_value) {
+std::expected<bool, std::wstring> optionalBool(const json& object,
+                                               const char* name,
+                                               bool defaultValue) {
     const auto iterator = object.find(name);
     if (iterator == object.end()) {
-        return default_value;
+        return defaultValue;
     }
     if (!iterator->is_boolean()) {
-        throw std::invalid_argument(std::string("field '") + name + "' must be a boolean");
+        return std::unexpected(fieldTypeError(name, L"a boolean"));
     }
     return iterator->get<bool>();
 }
 
-CommandConfig command_from_json(const json& object) {
+std::expected<CommandConfig, std::wstring> commandFromJson(const json& object) {
     if (!object.is_object()) {
-        throw std::invalid_argument("each item in 'commands' must be an object");
+        return std::unexpected(L"each item in 'commands' must be an object");
     }
-    return CommandConfig(
-        required_value<std::wstring>(object, "name"),
-        required_value<std::wstring>(object, "working_directory"),
-        required_value<std::wstring>(object, "command_line"),
-        optional_encoding(object),
-        optional_string(object, "id"),
-        optional_bool(object, "auto_start", false),
-        optional_bool(object, "shell", false));
+
+    const auto name = requiredString(object, "name");
+    if (!name) {
+        return std::unexpected(name.error());
+    }
+    const auto workingDirectory = requiredString(object, "working_directory");
+    if (!workingDirectory) {
+        return std::unexpected(workingDirectory.error());
+    }
+    const auto commandLine = requiredString(object, "command_line");
+    if (!commandLine) {
+        return std::unexpected(commandLine.error());
+    }
+    const auto encoding = optionalEncoding(object);
+    if (!encoding) {
+        return std::unexpected(encoding.error());
+    }
+    const auto id = optionalString(object, "id");
+    if (!id) {
+        return std::unexpected(id.error());
+    }
+    const auto autoStart = optionalBool(object, "auto_start", false);
+    if (!autoStart) {
+        return std::unexpected(autoStart.error());
+    }
+    const auto shell = optionalBool(object, "shell", false);
+    if (!shell) {
+        return std::unexpected(shell.error());
+    }
+
+    return CommandConfig{*name,
+                         *workingDirectory,
+                         *commandLine,
+                         *encoding,
+                         *id,
+                         *autoStart,
+                         *shell};
 }
 
-json command_to_json(const CommandConfig& command) {
+std::expected<json, std::wstring> commandToJson(const CommandConfig& command) {
+    const auto id = wideToUtf8(command.mId);
+    if (!id) {
+        return std::unexpected(id.error());
+    }
+    const auto name = wideToUtf8(command.mName);
+    if (!name) {
+        return std::unexpected(name.error());
+    }
+    const auto workingDirectory = wideToUtf8(command.mWorkingDirectory);
+    if (!workingDirectory) {
+        return std::unexpected(workingDirectory.error());
+    }
+    const auto commandLine = wideToUtf8(command.mCommandLine);
+    if (!commandLine) {
+        return std::unexpected(commandLine.error());
+    }
+
     return json{
-        {"id", wide_to_utf8(command.id)},
-        {"name", wide_to_utf8(command.name)},
-        {"working_directory", wide_to_utf8(command.working_directory)},
-        {"command_line", wide_to_utf8(command.command_line)},
-        {"encoding", command.encoding},
-        {"auto_start", command.auto_start},
-        {"shell", command.shell},
+        {"id", *id},
+        {"name", *name},
+        {"working_directory", *workingDirectory},
+        {"command_line", *commandLine},
+        {"encoding", command.mEncoding},
+        {"auto_start", command.mAutoStart},
+        {"shell", command.mShell},
     };
 }
 
-json data_to_json(const ConfigData& data) {
+std::expected<json, std::wstring> dataToJson(const ConfigData& data) {
     json commands = json::array();
-    for (const auto& command : data.commands) {
-        commands.push_back(command_to_json(command));
+    for (const auto& command : data.mCommands) {
+        const auto serializedCommand = commandToJson(command);
+        if (!serializedCommand) {
+            return std::unexpected(serializedCommand.error());
+        }
+        commands.push_back(*serializedCommand);
     }
+
     return json{
-        {"version", 1},
+        {"version", CONFIGURATION_VERSION},
         {"commands", std::move(commands)},
         {"preferences", {
-            {"wrap_lines", data.preferences.wrap_lines},
-            {"auto_scroll", data.preferences.auto_scroll},
+            {"wrap_lines", data.mPreferences.mWrapLines},
+            {"auto_scroll", data.mPreferences.mAutoScroll},
         }},
     };
 }
 
-std::filesystem::path local_app_data_path() {
-    wchar_t value[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", value,
-                                                  static_cast<DWORD>(std::size(value)));
-    if (length > 0 && length < std::size(value)) {
-        return std::filesystem::path(std::wstring(value, length));
+std::filesystem::path localAppDataPath() {
+    std::array<wchar_t, LOCAL_APP_DATA_BUFFER_SIZE> value{};
+    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA",
+                                                  value.data(),
+                                                  static_cast<DWORD>(value.size()));
+    if (length > 0 && length < value.size()) {
+        return std::filesystem::path(std::wstring(value.data(), length));
     }
 
-    PWSTR known_folder = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT,
-                                       nullptr, &known_folder))) {
-        wil::unique_cotaskmem_string owned_folder;
-        owned_folder.reset(known_folder);
-        return std::filesystem::path(owned_folder.get());
+    wil::unique_cotaskmem_string knownFolder;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData,
+                                       KF_FLAG_DEFAULT,
+                                       nullptr,
+                                       knownFolder.put()))) {
+        return std::filesystem::path(knownFolder.get());
     }
 
     std::error_code error;
@@ -194,161 +309,191 @@ std::filesystem::path local_app_data_path() {
     return error ? std::filesystem::path(L".") : fallback;
 }
 
-void set_error(std::wstring* error, std::wstring value) {
-    if (error != nullptr) {
-        *error = std::move(value);
-    }
-}
-
-bool replace_atomically(const std::filesystem::path& temporary,
-                        const std::filesystem::path& destination,
-                        std::wstring* error) {
+std::expected<void, std::wstring> replaceAtomically(
+    const std::filesystem::path& temporary,
+    const std::filesystem::path& destination) {
     const DWORD attributes = GetFileAttributesW(destination.c_str());
     if (attributes != INVALID_FILE_ATTRIBUTES) {
-        if (ReplaceFileW(destination.c_str(), temporary.c_str(), nullptr,
-                          REPLACEFILE_WRITE_THROUGH, nullptr, nullptr)) {
-            return true;
+        if (ReplaceFileW(destination.c_str(),
+                         temporary.c_str(),
+                         nullptr,
+                         REPLACEFILE_WRITE_THROUGH,
+                         nullptr,
+                         nullptr)) {
+            return {};
         }
-        const DWORD replace_error = GetLastError();
-        set_error(error, L"Unable to replace configuration file '" +
-                           path_for_error(destination) + L"': " +
-                           last_error_message(replace_error));
-        return false;
+        const DWORD replaceError = GetLastError();
+        return std::unexpected(L"Unable to replace configuration file '" +
+                               pathForError(destination) + L"': " +
+                               lastErrorMessage(replaceError));
     }
 
-    if (MoveFileExW(temporary.c_str(), destination.c_str(),
+    if (MoveFileExW(temporary.c_str(),
+                    destination.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        return true;
+        return {};
     }
-    const DWORD move_error = GetLastError();
-    set_error(error, L"Unable to install configuration file '" +
-                       path_for_error(destination) + L"': " +
-                       last_error_message(move_error));
-    return false;
+    const DWORD moveError = GetLastError();
+    return std::unexpected(L"Unable to install configuration file '" +
+                           pathForError(destination) + L"': " +
+                           lastErrorMessage(moveError));
 }
+
+class TemporaryPathGuard final {
+public:
+    explicit TemporaryPathGuard(std::filesystem::path path) : mPath(std::move(path)) {}
+
+    ~TemporaryPathGuard() noexcept {
+        if (!mReleased) {
+            std::error_code error;
+            std::filesystem::remove(mPath, error);
+        }
+    }
+
+    void release() noexcept { mReleased = true; }
+
+private:
+    std::filesystem::path mPath;
+    bool mReleased{false};
+};
 
 }  // namespace
 
-ConfigStore::ConfigStore(std::filesystem::path path) : path_(std::move(path)) {}
+ConfigStore::ConfigStore(std::filesystem::path path) : mPath(std::move(path)) {}
 
-std::filesystem::path ConfigStore::default_config_path() {
-    return local_app_data_path() / L"CommandRunner" / L"commands.json";
+std::filesystem::path ConfigStore::defaultConfigPath() {
+    return localAppDataPath() / L"CommandRunner" / L"commands.json";
 }
 
-ConfigLoadResult ConfigStore::load() const noexcept {
-    ConfigLoadResult result;
+ConfigLoadResult ConfigStore::load() const {
     try {
-        std::error_code exists_error;
-        if (!std::filesystem::exists(path_, exists_error)) {
-            if (exists_error) {
-                throw std::system_error(exists_error,
-                                        "configuration path could not be checked");
-            }
-            return result;
+        std::error_code existsError;
+        const bool exists = std::filesystem::exists(mPath, existsError);
+        if (existsError) {
+            return std::unexpected(errorForPath(mPath, L"configuration path could not be checked"));
+        }
+        if (!exists) {
+            return ConfigData{};
         }
 
-        std::ifstream input(path_, std::ios::binary);
+        std::ifstream input(mPath, std::ios::binary);
         if (!input) {
-            throw std::runtime_error("file could not be opened");
+            return std::unexpected(errorForPath(mPath, L"file could not be opened"));
         }
         std::stringstream contents;
         contents << input.rdbuf();
         if (!input.good() && !input.eof()) {
-            throw std::runtime_error("file could not be read");
+            return std::unexpected(errorForPath(mPath, L"file could not be read"));
         }
 
-        const json payload = json::parse(contents.str());
+        const json payload = json::parse(contents.str(), nullptr, false);
+        if (payload.is_discarded()) {
+            return std::unexpected(errorForPath(mPath, L"invalid JSON"));
+        }
         if (!payload.is_object()) {
-            throw std::invalid_argument("top-level configuration must be an object");
+            return std::unexpected(errorForPath(mPath,
+                                                L"top-level configuration must be an object"));
         }
 
-        const auto commands_iterator = payload.find("commands");
-        if (commands_iterator != payload.end()) {
-            if (!commands_iterator->is_array()) {
-                throw std::invalid_argument("field 'commands' must be an array");
+        ConfigData data;
+        const auto commandsIterator = payload.find("commands");
+        if (commandsIterator != payload.end()) {
+            if (!commandsIterator->is_array()) {
+                return std::unexpected(errorForPath(mPath, L"field 'commands' must be an array"));
             }
-            for (const auto& item : *commands_iterator) {
-                result.data.commands.push_back(command_from_json(item));
+            for (const auto& item : *commandsIterator) {
+                const auto command = commandFromJson(item);
+                if (!command) {
+                    return std::unexpected(errorForPath(mPath,
+                                                        L"invalid command: " + command.error()));
+                }
+                data.mCommands.push_back(*command);
             }
         }
 
-        const auto preferences_iterator = payload.find("preferences");
-        if (preferences_iterator != payload.end()) {
-            if (!preferences_iterator->is_object()) {
-                throw std::invalid_argument("field 'preferences' must be an object");
+        const auto preferencesIterator = payload.find("preferences");
+        if (preferencesIterator != payload.end()) {
+            if (!preferencesIterator->is_object()) {
+                return std::unexpected(errorForPath(mPath,
+                                                    L"field 'preferences' must be an object"));
             }
-            result.data.preferences.wrap_lines = optional_bool(
-                *preferences_iterator, "wrap_lines", false);
-            result.data.preferences.auto_scroll = optional_bool(
-                *preferences_iterator, "auto_scroll", true);
+            const auto wrapLines = optionalBool(*preferencesIterator, "wrap_lines", false);
+            if (!wrapLines) {
+                return std::unexpected(errorForPath(mPath, wrapLines.error()));
+            }
+            const auto autoScroll = optionalBool(*preferencesIterator, "auto_scroll", true);
+            if (!autoScroll) {
+                return std::unexpected(errorForPath(mPath, autoScroll.error()));
+            }
+            data.mPreferences.mWrapLines = *wrapLines;
+            data.mPreferences.mAutoScroll = *autoScroll;
         }
+        return data;
     } catch (const std::exception& exception) {
-        result.data = {};
-        result.error = L"Unable to read configuration file '" + path_for_error(path_) +
-                       L"': " + exception_message(exception);
+        return std::unexpected(errorForPath(mPath, exceptionMessage(exception)));
     } catch (...) {
-        result.data = {};
-        result.error = L"Unable to read configuration file '" + path_for_error(path_) +
-                       L"': unexpected error";
+        return std::unexpected(errorForPath(mPath, L"unexpected error"));
     }
-    return result;
 }
 
-bool ConfigStore::save(const ConfigData& data, std::wstring* error) const noexcept {
-    if (error != nullptr) {
-        error->clear();
-    }
-
-    std::filesystem::path temporary_path;
+ConfigSaveResult ConfigStore::save(const ConfigData& data) const {
+    std::filesystem::path temporaryPath;
     try {
-        temporary_path = path_;
-        temporary_path += L".tmp";
-        const auto parent = path_.parent_path();
+        temporaryPath = mPath;
+        temporaryPath += L".tmp";
+        TemporaryPathGuard temporaryFile(temporaryPath);
+
+        const auto parent = mPath.parent_path();
         if (!parent.empty()) {
-            std::filesystem::create_directories(parent);
+            std::error_code directoryError;
+            std::filesystem::create_directories(parent, directoryError);
+            if (directoryError) {
+                return std::unexpected(errorForPath(
+                    mPath, L"parent directory could not be created"));
+            }
         }
 
-        std::ofstream output(temporary_path, std::ios::binary | std::ios::trunc);
-        if (!output) {
-            set_error(error, L"Unable to open temporary configuration file '" +
-                               path_for_error(temporary_path) + L"'");
-            return false;
+        const auto payload = dataToJson(data);
+        if (!payload) {
+            return std::unexpected(errorForPath(mPath, payload.error()));
         }
-        output << data_to_json(data).dump(2) << '\n';
+
+        std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+        if (!output) {
+            return std::unexpected(errorForPath(
+                temporaryPath, L"temporary file could not be opened"));
+        }
+        output << payload->dump(2) << '\n';
         output.flush();
         if (!output) {
-            set_error(error, L"Unable to write temporary configuration file '" +
-                               path_for_error(temporary_path) + L"'");
-            output.close();
-            std::error_code ignored;
-            std::filesystem::remove(temporary_path, ignored);
-            return false;
+            return std::unexpected(errorForPath(
+                temporaryPath, L"temporary file could not be written"));
         }
         output.close();
-
-        if (!replace_atomically(temporary_path, path_, error)) {
-            std::error_code ignored;
-            std::filesystem::remove(temporary_path, ignored);
-            return false;
+        if (!output) {
+            return std::unexpected(errorForPath(
+                temporaryPath, L"temporary file could not be closed"));
         }
-        return true;
-    } catch (const std::exception& exception) {
-        set_error(error, L"Unable to save configuration file '" + path_for_error(path_) +
-                           L"': " + exception_message(exception));
-    } catch (...) {
-        set_error(error, L"Unable to save configuration file '" + path_for_error(path_) +
-                           L"': unexpected error");
-    }
 
-    std::error_code ignored;
-    std::filesystem::remove(temporary_path, ignored);
-    return false;
+        const auto replacement = replaceAtomically(temporaryPath, mPath);
+        if (!replacement) {
+            return std::unexpected(replacement.error());
+        }
+        temporaryFile.release();
+        return {};
+    } catch (const std::exception& exception) {
+        return std::unexpected(errorForPath(mPath, exceptionMessage(exception)));
+    } catch (...) {
+        return std::unexpected(errorForPath(mPath, L"unexpected error"));
+    }
 }
 
-bool ConfigStore::save(const std::vector<CommandConfig>& commands,
-                       const Preferences& preferences,
-                       std::wstring* error) const noexcept {
-    return save(ConfigData{commands, preferences}, error);
+ConfigSaveResult ConfigStore::save(std::span<const CommandConfig> commands,
+                                   const Preferences& preferences) const {
+    ConfigData data;
+    data.mCommands.assign(commands.begin(), commands.end());
+    data.mPreferences = preferences;
+    return save(data);
 }
 
 }  // namespace command_runner

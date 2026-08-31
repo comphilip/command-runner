@@ -5,78 +5,104 @@
 namespace command_runner::ui {
 
 MainWindow::MainWindow(HINSTANCE instance, ConfigData configuration)
-    : instance_(instance), configuration_(std::move(configuration)) {}
+    : mInstance(instance), mConfiguration(std::move(configuration)) {}
 
-bool MainWindow::create(int show_command) {
-    WNDCLASSEXW window_class{};
-    window_class.cbSize = sizeof(window_class);
-    window_class.hInstance = instance_;
-    window_class.lpfnWndProc = &MainWindow::window_proc;
-    window_class.lpszClassName = kWindowClassName;
-    window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    window_class.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    window_class.hIconSm = LoadIconW(nullptr, IDI_APPLICATION);
-    window_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+std::expected<void, DWORD> MainWindow::create(int showCommand) {
+    WNDCLASSEXW windowClass{};
+    windowClass.cbSize = sizeof(WNDCLASSEXW);
+    windowClass.hInstance = mInstance;
+    windowClass.lpfnWndProc = &MainWindow::windowProc;
+    windowClass.lpszClassName = WINDOW_CLASS_NAME;
+    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    windowClass.hIconSm = LoadIconW(nullptr, IDI_APPLICATION);
+    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
 
-    if (RegisterClassExW(&window_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-        return false;
+    if (RegisterClassExW(&windowClass) == 0) {
+        const DWORD error = GetLastError();
+        if (error != ERROR_CLASS_ALREADY_EXISTS) {
+            return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED : error);
+        }
     }
 
-    window_ = CreateWindowExW(
+    mWindow = CreateWindowExW(
         0,
-        kWindowClassName,
+        WINDOW_CLASS_NAME,
         L"Command Runner",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        scale_for_window(nullptr, 900),
-        scale_for_window(nullptr, 620),
+        scaleForWindow(nullptr, INITIAL_WINDOW_WIDTH),
+        scaleForWindow(nullptr, INITIAL_WINDOW_HEIGHT),
         nullptr,
         nullptr,
-        instance_,
+        mInstance,
         this);
-    if (window_ == nullptr) {
-        return false;
+    if (mWindow == nullptr) {
+        const DWORD error = GetLastError();
+        return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED : error);
     }
 
-    ShowWindow(window_, show_command);
-    UpdateWindow(window_);
-    return true;
+    ShowWindow(mWindow, showCommand);
+    UpdateWindow(mWindow);
+    return {};
 }
 
-int MainWindow::run_message_loop() const {
+std::expected<int, DWORD> MainWindow::runMessageLoop() const {
     MSG message{};
-    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+    while (true) {
+        const int result = GetMessageW(&message, nullptr, 0, 0);
+        if (result == -1) {
+            const DWORD error = GetLastError();
+            return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED : error);
+        }
+        if (result == 0) {
+            return static_cast<int>(message.wParam);
+        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
-    return static_cast<int>(message.wParam);
 }
 
-LRESULT CALLBACK MainWindow::window_proc(HWND window, UINT message,
-                                         WPARAM wparam, LPARAM lparam) {
-    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+LRESULT CALLBACK MainWindow::windowProc(HWND window, UINT message,
+                                        WPARAM wParam, LPARAM lParam) {
+    auto* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
-        const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lparam);
-        self = static_cast<MainWindow*>(create->lpCreateParams);
-        self->window_ = window;
-        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        const auto* createStruct = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+        if (createStruct == nullptr || createStruct->lpCreateParams == nullptr) {
+            return FALSE;
+        }
+        self = static_cast<MainWindow*>(createStruct->lpCreateParams);
+        self->mWindow = window;
+        SetLastError(ERROR_SUCCESS);
+        if (SetWindowLongPtrW(window,
+                              GWLP_USERDATA,
+                              reinterpret_cast<LONG_PTR>(self)) == 0 &&
+            GetLastError() != ERROR_SUCCESS) {
+            return FALSE;
+        }
     }
-    return self == nullptr ? DefWindowProcW(window, message, wparam, lparam)
-                           : self->handle_message(message, wparam, lparam);
+    return self == nullptr ? DefWindowProcW(window, message, wParam, lParam)
+                           : self->handleMessage(message, wParam, lParam);
 }
 
-LRESULT MainWindow::handle_message(UINT message, WPARAM wparam, LPARAM lparam) {
+LRESULT MainWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_GETMINMAXINFO: {
-        auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
-        limits->ptMinTrackSize.x = scale_for_window(window_, 640);
-        limits->ptMinTrackSize.y = scale_for_window(window_, 420);
+        auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (limits == nullptr) {
+            return DefWindowProcW(mWindow, message, wParam, lParam);
+        }
+        limits->ptMinTrackSize.x = scaleForWindow(mWindow, MINIMUM_WINDOW_WIDTH);
+        limits->ptMinTrackSize.y = scaleForWindow(mWindow, MINIMUM_WINDOW_HEIGHT);
         return 0;
     }
     case WM_DPICHANGED: {
-        const auto* suggested = reinterpret_cast<const RECT*>(lparam);
-        SetWindowPos(window_, nullptr,
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+        if (suggested == nullptr) {
+            return DefWindowProcW(mWindow, message, wParam, lParam);
+        }
+        SetWindowPos(mWindow, nullptr,
                      suggested->left,
                      suggested->top,
                      suggested->right - suggested->left,
@@ -86,28 +112,33 @@ LRESULT MainWindow::handle_message(UINT message, WPARAM wparam, LPARAM lparam) {
     }
     case WM_PAINT: {
         PAINTSTRUCT paint{};
-        const HDC device_context = BeginPaint(window_, &paint);
+        const HDC deviceContext = BeginPaint(mWindow, &paint);
+        if (deviceContext == nullptr) {
+            return 0;
+        }
         RECT client{};
-        GetClientRect(window_, &client);
-        FillRect(device_context, &client,
+        GetClientRect(mWindow, &client);
+        FillRect(deviceContext, &client,
                  reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
-        SetBkMode(device_context, TRANSPARENT);
-        DrawTextW(device_context, L"Command Runner", -1, &client,
+        SetBkMode(deviceContext, TRANSPARENT);
+        DrawTextW(deviceContext, L"Command Runner", -1, &client,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        EndPaint(window_, &paint);
+        EndPaint(mWindow, &paint);
         return 0;
     }
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
     default:
-        return DefWindowProcW(window_, message, wparam, lparam);
+        return DefWindowProcW(mWindow, message, wParam, lParam);
     }
 }
 
-int MainWindow::scale_for_window(HWND window, int value) {
-    const UINT dpi = window == nullptr ? 96 : GetDpiForWindow(window);
-    return MulDiv(value, static_cast<int>(dpi == 0 ? 96 : dpi), 96);
+int MainWindow::scaleForWindow(HWND window, int value) {
+    const UINT dpi = window == nullptr ? DEFAULT_DPI : GetDpiForWindow(window);
+    return MulDiv(value,
+                  static_cast<int>(dpi == 0 ? DEFAULT_DPI : dpi),
+                  DEFAULT_DPI);
 }
 
 }  // namespace command_runner::ui

@@ -10,7 +10,7 @@
 namespace command_runner {
 namespace {
 
-std::wstring make_id() {
+std::wstring makeId() {
     std::array<std::uint8_t, 16> bytes{};
     std::random_device random;
     for (auto& byte : bytes) {
@@ -32,29 +32,29 @@ std::wstring make_id() {
     return result.str();
 }
 
-double now_seconds() {
+double nowSeconds() {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration<double>(now).count();
 }
 
 }  // namespace
 
-CommandConfig::CommandConfig(std::wstring name_value,
-                             std::wstring working_directory_value,
-                             std::wstring command_line_value,
-                             std::string encoding_value,
-                             std::wstring id_value,
-                             bool auto_start_value,
-                             bool shell_value)
-    : name(std::move(name_value)),
-      working_directory(std::move(working_directory_value)),
-      command_line(std::move(command_line_value)),
-      encoding(std::move(encoding_value)),
-      id(std::move(id_value)),
-      auto_start(auto_start_value),
-      shell(shell_value) {
-    if (id.empty()) {
-        id = make_id();
+CommandConfig::CommandConfig(std::wstring nameValue,
+                             std::wstring workingDirectoryValue,
+                             std::wstring commandLineValue,
+                             std::string encodingValue,
+                             std::wstring idValue,
+                             bool autoStartValue,
+                             bool shellValue)
+    : mName(std::move(nameValue)),
+      mWorkingDirectory(std::move(workingDirectoryValue)),
+      mCommandLine(std::move(commandLineValue)),
+      mEncoding(std::move(encodingValue)),
+      mId(std::move(idValue)),
+      mAutoStart(autoStartValue),
+      mShell(shellValue) {
+    if (mId.empty()) {
+        mId = makeId();
     }
 }
 
@@ -62,22 +62,22 @@ LogLine LogLine::create(std::uint64_t sequence, std::string stream, std::wstring
     while (!text.empty() && (text.back() == L'\r' || text.back() == L'\n')) {
         text.pop_back();
     }
-    return LogLine{sequence, now_seconds(), std::move(stream), std::move(text)};
+    return LogLine{sequence, nowSeconds(), std::move(stream), std::move(text)};
 }
 
-std::wstring state_to_string(State state) {
+std::wstring stateToString(State state) {
     switch (state) {
-    case State::Stopped:
+    case State::STOPPED:
         return L"STOPPED";
-    case State::Starting:
+    case State::STARTING:
         return L"STARTING";
-    case State::Running:
+    case State::RUNNING:
         return L"RUNNING";
-    case State::Stopping:
+    case State::STOPPING:
         return L"STOPPING";
-    case State::Exited:
+    case State::EXITED:
         return L"EXITED";
-    case State::Failed:
+    case State::FAILED:
         return L"FAILED";
     }
     return L"FAILED";
