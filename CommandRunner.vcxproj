@@ -97,11 +97,13 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\core\models.cpp" />
     <ClCompile Include="src\core\config_store.cpp" />
+    <ClCompile Include="src\core\process_manager.cpp" />
     <ClCompile Include="src\ui\main_window.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\models.h" />
     <ClInclude Include="src\core\config_store.h" />
+    <ClInclude Include="src\core\process_manager.h" />
     <ClInclude Include="src\ui\main_window.h" />
     <ClInclude Include="resources\resource.h" />
   </ItemGroup>

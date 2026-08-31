@@ -70,11 +70,13 @@ struct RuntimeSnapshot {
 
 struct StateChanged {
     std::wstring mCommandId;
+    std::uint64_t mGeneration{0};
 };
 
 struct LogAdded {
     std::wstring mCommandId;
     LogLine mLine;
+    std::uint64_t mGeneration{0};
 };
 
 using ProcessEvent = std::variant<StateChanged, LogAdded>;

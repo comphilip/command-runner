@@ -33,6 +33,7 @@ set(COMMAND_RUNNER_SOURCES
     src/main.cpp
     src/core/models.cpp
     src/core/config_store.cpp
+    src/core/process_manager.cpp
     src/ui/main_window.cpp
     resources/CommandRunner.rc
 )
@@ -87,6 +88,12 @@ if(BUILD_TESTING)
         src/core/config_store.cpp
     )
 
+    add_executable(CommandRunnerProcessTests
+        tests/native/process_manager_tests.cpp
+        src/core/models.cpp
+        src/core/process_manager.cpp
+    )
+
     target_include_directories(CommandRunnerConfigTests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -100,4 +107,18 @@ if(BUILD_TESTING)
     target_compile_options(CommandRunnerConfigTests PRIVATE /W4 /permissive- /utf-8)
 
     add_test(NAME CommandRunner.ConfigStore COMMAND CommandRunnerConfigTests)
+
+    target_include_directories(CommandRunnerProcessTests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${WIL_INCLUDE_DIR}
+    )
+    target_link_libraries(CommandRunnerProcessTests PRIVATE ole32 shell32 user32)
+    target_compile_definitions(CommandRunnerProcessTests PRIVATE
+        UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00
+    )
+    target_compile_options(CommandRunnerProcessTests PRIVATE /W4 /permissive- /utf-8)
+
+    add_test(NAME CommandRunner.ProcessManager COMMAND CommandRunnerProcessTests)
 endif()
