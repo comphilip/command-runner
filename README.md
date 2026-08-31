@@ -59,6 +59,24 @@ language shown in Windows file properties are defined in `version_info.txt`.
 When releasing a new version, update `filevers`, `prodvers`, `FileVersion`, and
 `ProductVersion` together.
 
+## Native C++ migration (phase one)
+
+The phase-one native scaffold uses C++20, CMake, vcpkg manifest mode, MSVC,
+WIL, and nlohmann/json. The checked-in preset targets the installed Visual
+Studio 18 toolset; a Visual Studio 2022 installation can use the same CMake
+targets after selecting its generator/toolset. Set `VCPKG_ROOT` to a vcpkg
+checkout, then configure and build the x64 Debug preset:
+
+```powershell
+cmake --preset windows-x64-debug
+cmake --build --preset windows-x64-debug
+ctest --test-dir out/build/windows-x64-debug -C Debug --output-on-failure
+```
+
+`CommandRunner.sln` is provided for Visual Studio users. The phase-one window
+is intentionally an empty native host; process management and the full GUI are
+implemented in later migration phases.
+
 ## Automated GitHub Releases
 
 When a tag matching `v*` is pushed, GitHub Actions installs the dependencies on
