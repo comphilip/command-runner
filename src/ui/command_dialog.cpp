@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cwctype>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -16,12 +17,42 @@ namespace command_runner::ui {
 namespace {
 
 constexpr UINT WM_COMMAND_DIALOG_SAVE = WM_APP + 20;
+constexpr int DEFAULT_DPI = 96;
 constexpr int DIALOG_MINIMUM_WIDTH = 430;
 constexpr int DIALOG_LABEL_WIDTH = 104;
 constexpr int DIALOG_INPUT_LEFT = 120;
 constexpr int DIALOG_MARGIN = 8;
 constexpr int DIALOG_BUTTON_HEIGHT = 20;
-constexpr int DIALOG_OPTIONS_HEIGHT = 68;
+constexpr int DIALOG_LABEL_HEIGHT = 14;
+constexpr int DIALOG_INPUT_HEIGHT = 20;
+constexpr int DIALOG_BROWSE_HEIGHT = 22;
+constexpr int DIALOG_BROWSE_WIDTH = 70;
+constexpr int DIALOG_COMMAND_LINE_TOP = 114;
+constexpr int DIALOG_COMMAND_LINE_MINIMUM_HEIGHT = 40;
+constexpr int DIALOG_COMMAND_LINE_BOTTOM_GAP = 8;
+constexpr int DIALOG_BUTTON_GAP = 6;
+constexpr int DIALOG_BUTTON_WIDTH = 52;
+
+int scaleForWindow(HWND window, int value) {
+    UINT dpi = window == nullptr ? GetDpiForSystem() : GetDpiForWindow(window);
+    if (dpi == 0) {
+        dpi = DEFAULT_DPI;
+    }
+    return MulDiv(value, static_cast<int>(dpi), DEFAULT_DPI);
+}
+
+void positionControl(HWND control, int x, int y, int width, int height) {
+    if (control == nullptr) {
+        return;
+    }
+    SetWindowPos(control,
+                 nullptr,
+                 x,
+                 y,
+                 width,
+                 height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
 
 std::wstring readText(HWND control) {
     if (control == nullptr) {
@@ -210,12 +241,8 @@ INT_PTR CALLBACK CommandDialog::dialogProc(HWND dialog,
     case WM_GETMINMAXINFO: {
         auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
         if (limits != nullptr) {
-            RECT windowRect{};
-            GetWindowRect(dialog, &windowRect);
-            const int currentWidth = windowRect.right - windowRect.left;
-            limits->ptMinTrackSize.x = std::max(
-                currentWidth,
-                DIALOG_MINIMUM_WIDTH);
+            limits->ptMinTrackSize.x = scaleForWindow(
+                dialog, DIALOG_MINIMUM_WIDTH);
             limits->ptMinTrackSize.y = state->mFixedWindowHeight;
             limits->ptMaxTrackSize.y = state->mFixedWindowHeight;
             return TRUE;
@@ -304,82 +331,98 @@ void CommandDialog::layoutControls(DialogState& state) {
     GetClientRect(state.mDialog, &client);
     const int width = std::max(0L, client.right - client.left);
     const int height = std::max(0L, client.bottom - client.top);
+    const int margin = scaleForWindow(state.mDialog, DIALOG_MARGIN);
+    const int labelWidth = scaleForWindow(state.mDialog, DIALOG_LABEL_WIDTH);
+    const int labelHeight = scaleForWindow(state.mDialog, DIALOG_LABEL_HEIGHT);
+    const int inputLeft = scaleForWindow(state.mDialog, DIALOG_INPUT_LEFT);
+    const int inputHeight = scaleForWindow(state.mDialog, DIALOG_INPUT_HEIGHT);
+    const int browseWidth = scaleForWindow(state.mDialog, DIALOG_BROWSE_WIDTH);
+    const int browseHeight = scaleForWindow(state.mDialog, DIALOG_BROWSE_HEIGHT);
     const int inputWidth = std::max(
-        80,
-        width - DIALOG_INPUT_LEFT - DIALOG_MARGIN);
-    const int browseWidth = 70;
+        scaleForWindow(state.mDialog, 80),
+        width - inputLeft - margin);
     const int workingWidth = std::max(
-        80,
-        width - DIALOG_INPUT_LEFT - DIALOG_MARGIN - browseWidth - 6);
-    const int optionsY = std::max(140, height - DIALOG_OPTIONS_HEIGHT);
-    const int lineHeight = std::max(40, optionsY - 68);
-    const int buttonY = std::max(0, height - DIALOG_MARGIN - DIALOG_BUTTON_HEIGHT);
+        scaleForWindow(state.mDialog, 80),
+        width - inputLeft - margin - browseWidth -
+            scaleForWindow(state.mDialog, DIALOG_BUTTON_GAP));
+    const int commandLineTop = scaleForWindow(
+        state.mDialog, DIALOG_COMMAND_LINE_TOP);
+    const int buttonHeight = scaleForWindow(
+        state.mDialog, DIALOG_BUTTON_HEIGHT);
+    const int buttonY = std::max(0, height - margin - buttonHeight);
+    const int commandLineHeight = std::max(
+        scaleForWindow(state.mDialog, DIALOG_COMMAND_LINE_MINIMUM_HEIGHT),
+        buttonY - commandLineTop -
+            scaleForWindow(state.mDialog, DIALOG_COMMAND_LINE_BOTTOM_GAP));
+    const int buttonWidth = scaleForWindow(state.mDialog, DIALOG_BUTTON_WIDTH);
+    const int buttonGap = scaleForWindow(state.mDialog, DIALOG_BUTTON_GAP);
 
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_NAME),
-                 nullptr,
-                 DIALOG_INPUT_LEFT,
-                 8,
-                 inputWidth,
-                 20,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_WORKING_DIRECTORY),
-                 nullptr,
-                 DIALOG_INPUT_LEFT,
-                 34,
-                 workingWidth,
-                 20,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_BROWSE),
-                 nullptr,
-                 width - DIALOG_MARGIN - browseWidth,
-                 33,
-                 browseWidth,
-                 22,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(state.mCommandLine,
-                 nullptr,
-                 DIALOG_INPUT_LEFT,
-                 60,
-                 inputWidth,
-                 lineHeight,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_ENCODING),
-                 nullptr,
-                 DIALOG_INPUT_LEFT,
-                 optionsY - 26,
-                 112,
-                 100,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_SHELL),
-                 nullptr,
-                 DIALOG_INPUT_LEFT,
-                 optionsY,
-                 80,
-                 20,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_AUTO_START),
-                 nullptr,
-                 DIALOG_INPUT_LEFT + 90,
-                 optionsY,
-                 100,
-                 20,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    const int cancelWidth = 52;
-    const int saveWidth = 52;
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_CANCEL),
-                 nullptr,
-                 width - DIALOG_MARGIN - cancelWidth,
-                 buttonY,
-                 cancelWidth,
-                 DIALOG_BUTTON_HEIGHT,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(GetDlgItem(state.mDialog, IDC_COMMAND_SAVE),
-                 nullptr,
-                 width - DIALOG_MARGIN - cancelWidth - 6 - saveWidth,
-                 buttonY,
-                 saveWidth,
-                 DIALOG_BUTTON_HEIGHT,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_NAME_LABEL),
+                    margin,
+                    scaleForWindow(state.mDialog, 10),
+                    labelWidth,
+                    labelHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_NAME),
+                    inputLeft,
+                    scaleForWindow(state.mDialog, 8),
+                    inputWidth,
+                    inputHeight);
+    positionControl(
+        GetDlgItem(state.mDialog, IDC_COMMAND_WORKING_DIRECTORY_LABEL),
+        margin,
+        scaleForWindow(state.mDialog, 36),
+        labelWidth,
+        labelHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_WORKING_DIRECTORY),
+                    inputLeft,
+                    scaleForWindow(state.mDialog, 34),
+                    workingWidth,
+                    inputHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_BROWSE),
+                    width - margin - browseWidth,
+                    scaleForWindow(state.mDialog, 33),
+                    browseWidth,
+                    browseHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_ENCODING_LABEL),
+                    margin,
+                    scaleForWindow(state.mDialog, 62),
+                    labelWidth,
+                    labelHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_ENCODING),
+                    inputLeft,
+                    scaleForWindow(state.mDialog, 60),
+                    scaleForWindow(state.mDialog, 112),
+                    scaleForWindow(state.mDialog, 100));
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_SHELL),
+                    inputLeft,
+                    scaleForWindow(state.mDialog, 87),
+                    scaleForWindow(state.mDialog, 80),
+                    inputHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_AUTO_START),
+                    inputLeft + scaleForWindow(state.mDialog, 90),
+                    scaleForWindow(state.mDialog, 87),
+                    scaleForWindow(state.mDialog, 100),
+                    inputHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_LINE_LABEL),
+                    margin,
+                    scaleForWindow(state.mDialog, 116),
+                    labelWidth,
+                    labelHeight);
+    positionControl(state.mCommandLine,
+                    inputLeft,
+                    commandLineTop,
+                    inputWidth,
+                    commandLineHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_CANCEL),
+                    width - margin - buttonWidth,
+                    buttonY,
+                    buttonWidth,
+                    buttonHeight);
+    positionControl(GetDlgItem(state.mDialog, IDC_COMMAND_SAVE),
+                    width - margin - buttonWidth - buttonGap - buttonWidth,
+                    buttonY,
+                    buttonWidth,
+                    buttonHeight);
 }
 
 void CommandDialog::save(DialogState& state) {
