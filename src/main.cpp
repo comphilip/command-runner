@@ -1,15 +1,13 @@
-#include "core/config_store.h"
-#include "core/process_manager.h"
-#include "ui/main_window.h"
+#include "application.h"
 
 #include <windows.h>
 
 #include <utility>
 
-using command_runner::ConfigStore;
 using command_runner::ConfigData;
+using command_runner::ConfigStore;
 using command_runner::ProcessManager;
-using command_runner::ui::MainWindow;
+using command_runner::Application;
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -27,35 +25,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     }
 
     ProcessManager processManager;
-    for (const auto& command : configuration.mCommands) {
-        if (command.mAutoStart) {
-            processManager.start(command);
-        }
-    }
-
-    MainWindow mainWindow(instance,
-                          std::move(configuration),
-                          store,
-                          processManager);
-    const auto created = mainWindow.create(showCommand);
-    if (!created) {
+    Application application(instance,
+                            std::move(configuration),
+                            store,
+                            processManager);
+    const auto result = application.run(showCommand);
+    if (!result) {
         processManager.close();
         MessageBoxW(nullptr,
-                    L"Unable to create the main window.",
+                    L"Unable to start Command Runner.",
                     L"Command Runner",
                     MB_OK | MB_ICONERROR);
-        return static_cast<int>(created.error());
-    }
-
-    const auto messageLoop = mainWindow.runMessageLoop();
-    if (!messageLoop) {
-        processManager.close();
-        MessageBoxW(nullptr,
-                    L"The message loop terminated unexpectedly.",
-                    L"Command Runner",
-                    MB_OK | MB_ICONERROR);
-        return static_cast<int>(messageLoop.error());
+        return static_cast<int>(result.error());
     }
     processManager.close();
-    return *messageLoop;
+    return *result;
 }

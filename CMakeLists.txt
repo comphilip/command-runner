@@ -31,18 +31,28 @@ find_path(WIL_INCLUDE_DIR NAMES wil/resource.h REQUIRED)
 
 set(COMMAND_RUNNER_SOURCES
     src/main.cpp
+    src/application.cpp
     src/core/models.cpp
     src/core/config_store.cpp
     src/core/process_manager.cpp
+    src/platform/tray_icon.cpp
+    src/ui/command_dialog.cpp
+    src/ui/close_dialog.cpp
     src/ui/main_window.cpp
     resources/CommandRunner.rc
 )
 
 add_executable(CommandRunner WIN32 ${COMMAND_RUNNER_SOURCES})
 
+# The checked-in RC file owns the application manifest (including Per-Monitor
+# V2 DPI awareness). Prevent the linker wrapper from synthesizing a second
+# manifest resource for the WIN32 target.
+set_target_properties(CommandRunner PROPERTIES LINK_FLAGS "/MANIFEST:NO")
+
 target_include_directories(CommandRunner
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources
         ${WIL_INCLUDE_DIR}
 )
 

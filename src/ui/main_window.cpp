@@ -1,5 +1,8 @@
 #include "ui/main_window.h"
 
+#include "ui/command_dialog.h"
+#include "resource.h"
+
 #include <CommCtrl.h>
 #include <Richedit.h>
 #include <windowsx.h>
@@ -9,6 +12,7 @@
 #include <ctime>
 #include <expected>
 #include <iomanip>
+#include <iterator>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -79,19 +83,44 @@ constexpr COLORREF STDERR_COLOR = RGB(198, 40, 40);
 }  // namespace
 
 MainWindow::MainWindow(HINSTANCE instance,
-                       ConfigData configuration,
+                       ConfigData& configuration,
                        ConfigStore& store,
-                       ProcessManager& processManager)
+                       ProcessManager& processManager,
+                       MainWindowHost& host)
     : mInstance(instance),
-      mConfiguration(std::move(configuration)),
+      mConfiguration(configuration),
       mStore(store),
-      mProcessManager(processManager) {}
+      mProcessManager(processManager),
+      mHost(host) {}
 
 MainWindow::~MainWindow() {
+    dispose();
+}
+
+void MainWindow::dispose() noexcept {
+    if (mDisposed) {
+        return;
+    }
+    mDisposed = true;
     if (mWindow != nullptr && IsWindow(mWindow) != FALSE) {
         DestroyWindow(mWindow);
-        mWindow = nullptr;
     }
+    mWindow = nullptr;
+    mActionBar = nullptr;
+    mOptionsBar = nullptr;
+    mListView = nullptr;
+    mSplitter = nullptr;
+    mLogLabel = nullptr;
+    mLogEdit = nullptr;
+    mActionButtons.fill(nullptr);
+    mCombinedRadio = nullptr;
+    mStdoutRadio = nullptr;
+    mStderrRadio = nullptr;
+    mClearButton = nullptr;
+    mJumpLatestButton = nullptr;
+    mWrapLinesCheck = nullptr;
+    mAutoScrollCheck = nullptr;
+    mListViewPreviousProc = nullptr;
     if (mLogFont != nullptr) {
         DeleteObject(mLogFont);
         mLogFont = nullptr;
@@ -103,14 +132,19 @@ MainWindow::~MainWindow() {
 }
 
 std::expected<void, DWORD> MainWindow::create(int showCommand) {
+    mDisposed = false;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
     windowClass.hInstance = mInstance;
     windowClass.lpfnWndProc = &MainWindow::windowProc;
     windowClass.lpszClassName = WINDOW_CLASS_NAME;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    windowClass.hIconSm = LoadIconW(nullptr, IDI_APPLICATION);
+    windowClass.hIcon = LoadIconW(mInstance,
+                                  MAKEINTRESOURCEW(IDI_COMMAND_RUNNER));
+    if (windowClass.hIcon == nullptr) {
+        windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    }
+    windowClass.hIconSm = windowClass.hIcon;
     windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
 
     if (RegisterClassExW(&windowClass) == 0) {
@@ -144,8 +178,7 @@ std::expected<void, DWORD> MainWindow::create(int showCommand) {
     const auto controls = createControls();
     if (!controls) {
         const DWORD error = controls.error();
-        DestroyWindow(mWindow);
-        mWindow = nullptr;
+        dispose();
         return std::unexpected(error);
     }
 
@@ -166,23 +199,6 @@ std::expected<void, DWORD> MainWindow::create(int showCommand) {
     ShowWindow(mWindow, showCommand);
     UpdateWindow(mWindow);
     return {};
-}
-
-std::expected<int, DWORD> MainWindow::runMessageLoop() const {
-    MSG message{};
-    while (true) {
-        const int result = GetMessageW(&message, nullptr, 0, 0);
-        if (result == -1) {
-            const DWORD error = GetLastError();
-            return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED
-                                                           : error);
-        }
-        if (result == 0) {
-            return static_cast<int>(message.wParam);
-        }
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
 }
 
 LRESULT CALLBACK MainWindow::windowProc(HWND window,
@@ -292,6 +308,15 @@ LRESULT CALLBACK MainWindow::splitterProc(HWND window,
 
 LRESULT MainWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xFFF0U) == SC_MINIMIZE) {
+            mHost.onMainWindowMinimizeRequested();
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        mHost.onMainWindowCloseRequested();
+        return 0;
     case WM_GETMINMAXINFO: {
         auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
         if (limits == nullptr) {
@@ -341,13 +366,13 @@ LRESULT MainWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         switch (controlId) {
         case IDC_ADD:
-            showPhaseFourMessage(L"Add");
+            addCommand();
             return 0;
         case IDC_EDIT:
-            invokeEditIfAvailable();
+            editSelectedCommand();
             return 0;
         case IDC_DELETE:
-            showPhaseFourMessage(L"Delete");
+            deleteSelectedCommands();
             return 0;
         case IDC_START:
             startSelected();
@@ -406,7 +431,6 @@ LRESULT MainWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return 1;
     case WM_DESTROY:
         KillTimer(mWindow, PROCESS_EVENT_TIMER);
-        PostQuitMessage(0);
         return 0;
     default:
         break;
@@ -449,7 +473,7 @@ LRESULT MainWindow::handleListViewMessage(UINT message,
                     const CommandConfig* command =
                         commandById(mSelectedCommandIds.front());
                     if (command != nullptr && isEditable(*command)) {
-                        showPhaseFourMessage(L"Edit");
+                        editSelectedCommand();
                     }
                 }
             }
@@ -523,7 +547,7 @@ LRESULT MainWindow::handleListViewMessage(UINT message,
             return 0;
         case VK_DELETE:
             if (!mSelectedCommandIds.empty()) {
-                showPhaseFourMessage(L"Delete");
+                deleteSelectedCommands();
             }
             return 0;
         case VK_SPACE:
@@ -1334,14 +1358,142 @@ void MainWindow::clearLogs() {
     }
 }
 
-void MainWindow::showPhaseFourMessage(std::wstring_view action) {
-    const std::wstring message = std::wstring(action) +
-                                 L" command dialogs will be implemented in "
-                                 L"the next migration phase.";
+bool MainWindow::saveConfiguration() {
+    const auto result = mStore.save(mConfiguration);
+    if (result) {
+        return true;
+    }
     MessageBoxW(mWindow,
-                message.c_str(),
-                L"Command Runner",
-                MB_OK | MB_ICONINFORMATION);
+                result.error().c_str(),
+                L"Save Failed",
+                MB_OK | MB_ICONERROR);
+    return false;
+}
+
+void MainWindow::addCommand() {
+    const auto command = CommandDialog::show(mWindow, mInstance);
+    if (!command) {
+        return;
+    }
+    mConfiguration.mCommands.push_back(*command);
+    if (!saveConfiguration()) {
+        mConfiguration.mCommands.pop_back();
+        return;
+    }
+
+    const std::wstring newCommandId = command->mId;
+    refreshRows();
+    const auto found = std::ranges::find_if(
+        mConfiguration.mCommands,
+        [&newCommandId](const CommandConfig& value) {
+            return value.mId == newCommandId;
+        });
+    if (found != mConfiguration.mCommands.end()) {
+        const int index = static_cast<int>(
+            std::distance(mConfiguration.mCommands.begin(), found));
+        mUpdatingList = true;
+        ListView_SetItemState(mListView,
+                              -1,
+                              0,
+                              LVIS_SELECTED | LVIS_FOCUSED);
+        ListView_SetItemState(mListView,
+                              index,
+                              LVIS_SELECTED | LVIS_FOCUSED,
+                              LVIS_SELECTED | LVIS_FOCUSED);
+        mUpdatingList = false;
+        mSelectionAnchorIndex = index;
+        syncSelection();
+    }
+}
+
+void MainWindow::editSelectedCommand() {
+    if (mSelectedCommandIds.size() != 1) {
+        MessageBoxW(mWindow,
+                    L"Please select one command.",
+                    L"Edit Command",
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto found = std::ranges::find_if(
+        mConfiguration.mCommands,
+        [this](const CommandConfig& command) {
+            return command.mId == mSelectedCommandIds.front();
+        });
+    if (found == mConfiguration.mCommands.end()) {
+        return;
+    }
+    if (!isEditable(*found)) {
+        MessageBoxW(mWindow,
+                    L"Stop this command before editing it.",
+                    L"Cannot Edit",
+                    MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    const CommandConfig original = *found;
+    const auto edited = CommandDialog::show(mWindow, mInstance, &original);
+    if (!edited) {
+        return;
+    }
+    *found = *edited;
+    if (!saveConfiguration()) {
+        *found = original;
+        return;
+    }
+    refreshRows();
+}
+
+void MainWindow::deleteSelectedCommands() {
+    if (mSelectedCommandIds.empty()) {
+        return;
+    }
+    const bool canDelete = std::ranges::all_of(
+        mSelectedCommandIds,
+        [this](const std::wstring& commandId) {
+            return isInactive(mProcessManager.snapshot(commandId).mState);
+        });
+    if (!canDelete) {
+        MessageBoxW(mWindow,
+                    L"Stop the selected running commands before deleting them.",
+                    L"Cannot Delete",
+                    MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    const std::wstring question =
+        L"Are you sure you want to delete " +
+        std::to_wstring(mSelectedCommandIds.size()) + L" command(s)?";
+    if (MessageBoxW(mWindow,
+                    question.c_str(),
+                    L"Delete Commands",
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) {
+        return;
+    }
+
+    const ConfigData original = mConfiguration;
+    const auto newEnd = std::ranges::remove_if(
+        mConfiguration.mCommands,
+        [this](const CommandConfig& command) {
+            return std::ranges::find(mSelectedCommandIds, command.mId) !=
+                   mSelectedCommandIds.end();
+        });
+    mConfiguration.mCommands.erase(newEnd.begin(),
+                                   mConfiguration.mCommands.end());
+    if (!saveConfiguration()) {
+        mConfiguration = original;
+        return;
+    }
+    mSelectedCommandIds.clear();
+    mActiveCommandId.clear();
+    mSelectionAnchorIndex = -1;
+    refreshRows();
+    refreshLogs();
+}
+
+void MainWindow::showStopping() {
+    if (mWindow != nullptr) {
+        SetWindowTextW(mWindow, L"Command Runner - Stopping all commands...");
+    }
 }
 
 void MainWindow::invokeEditIfAvailable() {
@@ -1351,7 +1503,7 @@ void MainWindow::invokeEditIfAvailable() {
     }
     const CommandConfig* command = commandById(mSelectedCommandIds.front());
     if (command != nullptr && isEditable(*command)) {
-        showPhaseFourMessage(L"Edit");
+        editSelectedCommand();
     } else {
         startSelected();
     }

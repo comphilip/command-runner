@@ -63,6 +63,7 @@
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
+      <GenerateManifest>false</GenerateManifest>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>comctl32.lib;gdi32.lib;ole32.lib;shell32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -87,6 +88,7 @@
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
+      <GenerateManifest>false</GenerateManifest>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
@@ -95,15 +97,23 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\application.cpp" />
     <ClCompile Include="src\core\models.cpp" />
     <ClCompile Include="src\core\config_store.cpp" />
     <ClCompile Include="src\core\process_manager.cpp" />
+    <ClCompile Include="src\platform\tray_icon.cpp" />
+    <ClCompile Include="src\ui\command_dialog.cpp" />
+    <ClCompile Include="src\ui\close_dialog.cpp" />
     <ClCompile Include="src\ui\main_window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\application.h" />
     <ClInclude Include="src\core\models.h" />
     <ClInclude Include="src\core\config_store.h" />
     <ClInclude Include="src\core\process_manager.h" />
+    <ClInclude Include="src\platform\tray_icon.h" />
+    <ClInclude Include="src\ui\command_dialog.h" />
+    <ClInclude Include="src\ui\close_dialog.h" />
     <ClInclude Include="src\ui\main_window.h" />
     <ClInclude Include="resources\resource.h" />
   </ItemGroup>

@@ -59,10 +59,12 @@ language shown in Windows file properties are defined in `version_info.txt`.
 When releasing a new version, update `filevers`, `prodvers`, `FileVersion`, and
 `ProductVersion` together.
 
-## Native C++ migration (phase three)
+## Native C++ migration (phase four)
 
 The native migration uses C++23, CMake, vcpkg manifest mode, MSVC, WIL, and
-nlohmann/json. Phase three adds the native main window with an action bar,
+nlohmann/json. Phases three and four add the native main window with an action
+bar, native add/edit/delete and close-confirmation dialogs, a Win32 system-tray
+icon, and
 multi-select ListView, draggable vertical splitter, log filtering controls,
 RichEdit output, keyboard navigation, and DPI-aware responsive layout. The
 Windows process manager from phase two continues to provide one shared IOCP
@@ -78,8 +80,9 @@ cmake --build --preset windows-x64-debug
 ctest --test-dir out/build/windows-x64-debug -C Debug --output-on-failure
 ```
 
-`CommandRunner.sln` is provided for Visual Studio users. Command add/edit/delete
-dialogs and system-tray lifecycle remain scheduled for phase four.
+`CommandRunner.sln` is provided for Visual Studio users. The application state
+survives repeated main-window destruction and recreation while minimized to the
+system tray.
 
 ## Automated GitHub Releases
 

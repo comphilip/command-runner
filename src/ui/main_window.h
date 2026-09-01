@@ -13,19 +13,30 @@
 
 namespace command_runner::ui {
 
+class MainWindowHost {
+public:
+    virtual ~MainWindowHost() = default;
+
+    virtual void onMainWindowCloseRequested() = 0;
+    virtual void onMainWindowMinimizeRequested() = 0;
+};
+
 class MainWindow final {
 public:
     MainWindow(HINSTANCE instance,
-               ConfigData configuration,
+               ConfigData& configuration,
                ConfigStore& store,
-               ProcessManager& processManager);
+               ProcessManager& processManager,
+               MainWindowHost& host);
     ~MainWindow();
 
     MainWindow(const MainWindow&) = delete;
     MainWindow& operator=(const MainWindow&) = delete;
 
     [[nodiscard]] std::expected<void, DWORD> create(int showCommand);
-    [[nodiscard]] std::expected<int, DWORD> runMessageLoop() const;
+    [[nodiscard]] HWND window() const noexcept { return mWindow; }
+    void dispose() noexcept;
+    void showStopping();
 
 private:
     enum class LogView {
@@ -111,8 +122,11 @@ private:
     void stopSelected();
     void restartSelected();
     void clearLogs();
-    void showPhaseFourMessage(std::wstring_view action);
+    void addCommand();
+    void editSelectedCommand();
+    void deleteSelectedCommands();
     void invokeEditIfAvailable();
+    [[nodiscard]] bool saveConfiguration();
 
     void syncSelection();
     void selectRange(int anchorIndex, int targetIndex);
@@ -152,9 +166,10 @@ private:
     HMODULE mRichEditModule{};
     HFONT mLogFont{};
 
-    ConfigData mConfiguration;
+    ConfigData& mConfiguration;
     ConfigStore& mStore;
     ProcessManager& mProcessManager;
+    MainWindowHost& mHost;
     std::vector<std::wstring> mSelectedCommandIds;
     std::wstring mActiveCommandId;
     LogView mLogView{LogView::COMBINED};
@@ -163,6 +178,7 @@ private:
     UINT mCurrentDpi{DEFAULT_DPI};
     bool mUpdatingList{};
     bool mSplitterDragging{};
+    bool mDisposed{};
 };
 
 }  // namespace command_runner::ui
