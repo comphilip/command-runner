@@ -93,13 +93,13 @@ set_target_properties(CommandRunner PROPERTIES
 include(CTest)
 if(BUILD_TESTING)
     add_executable(CommandRunnerConfigTests
-        tests/native/config_store_tests.cpp
+        tests/config_store_tests.cpp
         src/core/models.cpp
         src/core/config_store.cpp
     )
 
     add_executable(CommandRunnerProcessTests
-        tests/native/process_manager_tests.cpp
+        tests/process_manager_tests.cpp
         src/core/models.cpp
         src/core/process_manager.cpp
     )

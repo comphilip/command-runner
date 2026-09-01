@@ -12,11 +12,6 @@
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
-      "environment": {
-        "X_VCPKG_REGISTRIES_CACHE": "${sourceDir}/out/vcpkg/registries/git",
-        "VCPKG_DEFAULT_BINARY_CACHE": "${sourceDir}/out/vcpkg/binary-cache",
-        "VCPKG_DOWNLOADS": "${sourceDir}/out/vcpkg/downloads"
-      },
       "cacheVariables": {
         "BUILD_TESTING": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
