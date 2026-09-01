@@ -59,15 +59,18 @@ language shown in Windows file properties are defined in `version_info.txt`.
 When releasing a new version, update `filevers`, `prodvers`, `FileVersion`, and
 `ProductVersion` together.
 
-## Native C++ migration (phase two)
+## Native C++ migration (phase three)
 
 The native migration uses C++23, CMake, vcpkg manifest mode, MSVC, WIL, and
-nlohmann/json. Phase two adds the Windows process manager with one shared
-IOCP worker for stdout/stderr capture, Job Object process-tree cleanup, and
-direct or shell command execution. The checked-in preset targets the installed
-Visual Studio 18 toolset; a Visual Studio 2022 installation can use the same
-CMake targets after selecting its generator/toolset. Set `VCPKG_ROOT` to a
-vcpkg checkout, then configure and build the x64 Debug preset:
+nlohmann/json. Phase three adds the native main window with an action bar,
+multi-select ListView, draggable vertical splitter, log filtering controls,
+RichEdit output, keyboard navigation, and DPI-aware responsive layout. The
+Windows process manager from phase two continues to provide one shared IOCP
+worker for stdout/stderr capture, Job Object process-tree cleanup, and direct
+or shell command execution. The checked-in preset targets the installed Visual
+Studio 18 toolset; a Visual Studio 2022 installation can use the same CMake
+targets after selecting its generator/toolset. Set `VCPKG_ROOT` to a vcpkg
+checkout, then configure and build the x64 Debug preset:
 
 ```powershell
 cmake --preset windows-x64-debug
@@ -75,9 +78,8 @@ cmake --build --preset windows-x64-debug
 ctest --test-dir out/build/windows-x64-debug -C Debug --output-on-failure
 ```
 
-`CommandRunner.sln` is provided for Visual Studio users. The native window is
-still intentionally minimal; the full GUI is implemented in later migration
-phases.
+`CommandRunner.sln` is provided for Visual Studio users. Command add/edit/delete
+dialogs and system-tray lifecycle remain scheduled for phase four.
 
 ## Automated GitHub Releases
 

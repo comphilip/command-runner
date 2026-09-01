@@ -33,7 +33,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         }
     }
 
-    MainWindow mainWindow(instance, std::move(configuration));
+    MainWindow mainWindow(instance,
+                          std::move(configuration),
+                          store,
+                          processManager);
     const auto created = mainWindow.create(showCommand);
     if (!created) {
         processManager.close();
