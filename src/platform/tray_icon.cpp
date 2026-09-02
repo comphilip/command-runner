@@ -51,20 +51,20 @@ std::expected<void, DWORD> TrayIcon::create() {
     }
     AppendMenuW(mMenu, MF_STRING, TRAY_OPEN, L"&Open");
     AppendMenuW(mMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(mMenu, MF_STRING, TRAY_START_ALL, L"&Start All");
     AppendMenuW(mMenu, MF_STRING, TRAY_STOP_ALL, L"S&top All");
+    AppendMenuW(mMenu, MF_STRING, TRAY_START_ALL, L"&Start All");
     AppendMenuW(mMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(mMenu, MF_STRING, TRAY_EXIT, L"E&xit");
 
-    mWindow = CreateWindowExW(0,
+    mWindow = CreateWindowExW(WS_EX_TOOLWINDOW,
                               WINDOW_CLASS_NAME,
                               L"Command Runner",
+                              WS_POPUP,
                               0,
                               0,
                               0,
                               0,
-                              0,
-                              HWND_MESSAGE,
+                              nullptr,
                               nullptr,
                               mInstance,
                               this);
@@ -141,9 +141,13 @@ LRESULT CALLBACK TrayIcon::windowProc(HWND window,
         return 0;
     }
     if (message == TRAY_CALLBACK_MESSAGE) {
-        if (lParam == WM_LBUTTONDBLCLK) {
+        const UINT trayEvent = LOWORD(lParam);
+        if (trayEvent == WM_LBUTTONUP ||
+            trayEvent == WM_LBUTTONDBLCLK || trayEvent == NIN_SELECT ||
+            trayEvent == NIN_KEYSELECT) {
             self->mListener.onTrayRestoreRequested();
-        } else if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
+        } else if (trayEvent == WM_RBUTTONUP ||
+                   trayEvent == WM_CONTEXTMENU) {
             self->showMenu();
         }
         return 0;
