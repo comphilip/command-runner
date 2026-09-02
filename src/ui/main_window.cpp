@@ -241,6 +241,11 @@ LRESULT CALLBACK MainWindow::listViewProc(HWND window,
     if (self == nullptr) {
         return DefWindowProcW(window, message, wParam, lParam);
     }
+    if (message == WM_NOTIFY) {
+        // The list-view control must process notifications from its header
+        // control so a dragged header divider updates the item layout too.
+        return self->forwardListViewMessage(message, wParam, lParam);
+    }
     return self->handleListViewMessage(message, wParam, lParam);
 }
 
