@@ -146,18 +146,15 @@ void TrayIcon::showMenu() {
     if (mMenu == nullptr || GetHwnd() == nullptr) {
         return;
     }
-    POINT cursor{};
-    if (GetCursorPos(&cursor) == FALSE) {
-        return;
-    }
-    ::SetForegroundWindow(GetHwnd());
+    const Win32xx::CPoint cursor = Win32xx::GetCursorPos();
+    SetForegroundWindow();
     const UINT command = mMenu.TrackPopupMenu(
         TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
         cursor.x,
         cursor.y,
         GetHwnd(),
         nullptr);
-    PostMessage(WM_NULL, 0, 0);
+    PostMessage(WM_NULL);
     dispatchMenuCommand(command);
 }
 

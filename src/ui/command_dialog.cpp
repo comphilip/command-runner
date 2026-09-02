@@ -1,6 +1,7 @@
 #include "ui/command_dialog.h"
 
 #include "resource.h"
+#include "ui/win32xx_helpers.h"
 
 #include <wxx_folderdialog.h>
 
@@ -9,13 +10,13 @@
 #include <cwctype>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace command_runner::ui {
 namespace {
 
-constexpr int DEFAULT_DPI = 96;
 constexpr int DIALOG_MINIMUM_WIDTH = 430;
 constexpr int DIALOG_LABEL_WIDTH = 104;
 constexpr int DIALOG_INPUT_LEFT = 120;
@@ -31,28 +32,19 @@ constexpr int DIALOG_COMMAND_LINE_BOTTOM_GAP = 8;
 constexpr int DIALOG_BUTTON_GAP = 6;
 constexpr int DIALOG_BUTTON_WIDTH = 52;
 
-int scaleForWindow(HWND window, int value) {
-    UINT dpi = window == nullptr ? GetDpiForSystem() : GetDpiForWindow(window);
-    if (dpi == 0) {
-        dpi = DEFAULT_DPI;
-    }
-    return MulDiv(value, static_cast<int>(dpi), DEFAULT_DPI);
-}
-
 void positionControl(const Win32xx::CWnd& control,
                      int x,
                      int y,
                      int width,
                      int height) {
-    if (!control.IsWindow()) {
-        return;
+    if (control.IsWindow()) {
+        control.SetWindowPos(nullptr,
+                             x,
+                             y,
+                             width,
+                             height,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
     }
-    control.SetWindowPos(nullptr,
-                         x,
-                         y,
-                         width,
-                         height,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 std::wstring readText(const Win32xx::CWnd& control) {
@@ -148,16 +140,27 @@ CommandDialog::CommandDialog(CommandConfig draft, bool editing)
 BOOL CommandDialog::OnInitDialog() {
     CDialog::OnInitDialog();
     SetWindowText(mEditing ? L"Edit Command" : L"Add Command");
-    SetDlgItemText(IDC_COMMAND_NAME, mDraft.mName.c_str());
-    SetDlgItemText(IDC_COMMAND_WORKING_DIRECTORY,
-                   mDraft.mWorkingDirectory.c_str());
-    SetDlgItemText(IDC_COMMAND_LINE, mDraft.mCommandLine.c_str());
 
-    mEncoding.AttachDlgItem(IDC_COMMAND_ENCODING, *this);
-    mShell.AttachDlgItem(IDC_COMMAND_SHELL, *this);
-    mAutoStart.AttachDlgItem(IDC_COMMAND_AUTO_START, *this);
-    mCommandLine.AttachDlgItem(IDC_COMMAND_LINE, *this);
+    const auto attach = [this](Win32xx::CWnd& control, UINT id) {
+        control.AttachDlgItem(id, *this);
+    };
+    attach(mNameLabel, IDC_COMMAND_NAME_LABEL);
+    attach(mName, IDC_COMMAND_NAME);
+    attach(mWorkingDirectoryLabel, IDC_COMMAND_WORKING_DIRECTORY_LABEL);
+    attach(mWorkingDirectory, IDC_COMMAND_WORKING_DIRECTORY);
+    attach(mBrowse, IDC_COMMAND_BROWSE);
+    attach(mEncodingLabel, IDC_COMMAND_ENCODING_LABEL);
+    attach(mEncoding, IDC_COMMAND_ENCODING);
+    attach(mShell, IDC_COMMAND_SHELL);
+    attach(mAutoStart, IDC_COMMAND_AUTO_START);
+    attach(mCommandLineLabel, IDC_COMMAND_LINE_LABEL);
+    attach(mCommandLine, IDC_COMMAND_LINE);
+    attach(mSave, IDC_COMMAND_SAVE);
+    attach(mCancel, IDC_COMMAND_CANCEL);
 
+    mName.SetWindowText(mDraft.mName.c_str());
+    mWorkingDirectory.SetWindowText(mDraft.mWorkingDirectory.c_str());
+    mCommandLine.SetWindowText(mDraft.mCommandLine.c_str());
     for (const wchar_t* value : {L"auto", L"gbk", L"utf-8", L"system"}) {
         mEncoding.AddString(value);
     }
@@ -170,10 +173,10 @@ BOOL CommandDialog::OnInitDialog() {
     mAutoStart.SetCheck(mDraft.mAutoStart ? BST_CHECKED : BST_UNCHECKED);
 
     const Win32xx::CRect windowRect = GetWindowRect();
-    mFixedWindowHeight = windowRect.bottom - windowRect.top;
+    mFixedWindowHeight = windowRect.Height();
     updateControlFont();
     layoutControls();
-    GetDlgItem(IDC_COMMAND_NAME).SetFocus();
+    mName.SetFocus();
     return FALSE;
 }
 
@@ -205,12 +208,7 @@ void CommandDialog::OnClose() {
     OnCancel();
 }
 
-void CommandDialog::OnDestroy() {
-    if (mUiFont != nullptr) {
-        DeleteObject(mUiFont);
-        mUiFont = nullptr;
-    }
-}
+void CommandDialog::OnDestroy() {}
 
 BOOL CommandDialog::PreTranslateMessage(MSG& message) {
     if (message.hwnd == mCommandLine.GetHwnd() &&
@@ -247,10 +245,7 @@ INT_PTR CommandDialog::DialogProc(UINT message,
         const auto* suggested = reinterpret_cast<const RECT*>(lParam);
         if (suggested != nullptr) {
             SetWindowPos(nullptr,
-                         suggested->left,
-                         suggested->top,
-                         suggested->right - suggested->left,
-                         suggested->bottom - suggested->top,
+                         *suggested,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             mFixedWindowHeight = suggested->bottom - suggested->top;
         }
@@ -268,62 +263,40 @@ INT_PTR CommandDialog::DialogProc(UINT message,
 }
 
 void CommandDialog::updateControlFont() {
-    UINT dpi = GetDpiForWindow(GetHwnd());
-    if (dpi == 0) {
-        dpi = DEFAULT_DPI;
-    }
-    const HFONT newFont = CreateFontW(-MulDiv(9,
-                                               static_cast<int>(dpi),
-                                               72),
-                                      0,
-                                      0,
-                                      0,
-                                      FW_NORMAL,
-                                      FALSE,
-                                      FALSE,
-                                      FALSE,
-                                      DEFAULT_CHARSET,
-                                      OUT_DEFAULT_PRECIS,
-                                      CLIP_DEFAULT_PRECIS,
-                                      CLEARTYPE_QUALITY,
-                                      VARIABLE_PITCH | FF_SWISS,
-                                      L"Segoe UI");
-    if (newFont == nullptr) {
+    if (!IsWindow()) {
         return;
     }
-
-    const HFONT oldFont = mUiFont;
-    mUiFont = newFont;
-    const std::array<int, 13> controlIds{
-        IDC_COMMAND_NAME_LABEL,
-        IDC_COMMAND_NAME,
-        IDC_COMMAND_WORKING_DIRECTORY_LABEL,
-        IDC_COMMAND_WORKING_DIRECTORY,
-        IDC_COMMAND_BROWSE,
-        IDC_COMMAND_ENCODING_LABEL,
-        IDC_COMMAND_ENCODING,
-        IDC_COMMAND_SHELL,
-        IDC_COMMAND_AUTO_START,
-        IDC_COMMAND_LINE_LABEL,
-        IDC_COMMAND_LINE,
-        IDC_COMMAND_SAVE,
-        IDC_COMMAND_CANCEL,
+    Win32xx::CFont newFont;
+    createFont(newFont, GetHwnd(), 9, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+    const HFONT font = static_cast<HFONT>(newFont);
+    const std::array<Win32xx::CWnd*, 13> controls{
+        &mNameLabel,
+        &mName,
+        &mWorkingDirectoryLabel,
+        &mWorkingDirectory,
+        &mBrowse,
+        &mEncodingLabel,
+        &mEncoding,
+        &mShell,
+        &mAutoStart,
+        &mCommandLineLabel,
+        &mCommandLine,
+        &mSave,
+        &mCancel,
     };
-    for (const int controlId : controlIds) {
-        const Win32xx::CWnd control = GetDlgItem(controlId);
-        if (control.IsWindow()) {
-            control.SetFont(mUiFont, TRUE);
-        }
+    for (const Win32xx::CWnd* control : controls) {
+        control->SetFont(font, TRUE);
     }
-    if (oldFont != nullptr) {
-        DeleteObject(oldFont);
-    }
+    mUiFont = newFont;
 }
 
 void CommandDialog::layoutControls() {
+    if (!IsWindow()) {
+        return;
+    }
     const Win32xx::CRect client = GetClientRect();
-    const int width = std::max(0L, client.right - client.left);
-    const int height = std::max(0L, client.bottom - client.top);
+    const int width = std::max(0, client.Width());
+    const int height = std::max(0, client.Height());
     const int margin = scaleForWindow(GetHwnd(), DIALOG_MARGIN);
     const int labelWidth = scaleForWindow(GetHwnd(), DIALOG_LABEL_WIDTH);
     const int labelHeight = scaleForWindow(GetHwnd(), DIALOG_LABEL_HEIGHT);
@@ -350,52 +323,52 @@ void CommandDialog::layoutControls() {
     const int buttonWidth = scaleForWindow(GetHwnd(), DIALOG_BUTTON_WIDTH);
     const int buttonGap = scaleForWindow(GetHwnd(), DIALOG_BUTTON_GAP);
 
-    positionControl(GetDlgItem(IDC_COMMAND_NAME_LABEL),
+    positionControl(mNameLabel,
                     margin,
                     scaleForWindow(GetHwnd(), 10),
                     labelWidth,
                     labelHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_NAME),
+    positionControl(mName,
                     inputLeft,
                     scaleForWindow(GetHwnd(), 8),
                     inputWidth,
                     inputHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_WORKING_DIRECTORY_LABEL),
+    positionControl(mWorkingDirectoryLabel,
                     margin,
                     scaleForWindow(GetHwnd(), 36),
                     labelWidth,
                     labelHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_WORKING_DIRECTORY),
+    positionControl(mWorkingDirectory,
                     inputLeft,
                     scaleForWindow(GetHwnd(), 34),
                     workingWidth,
                     inputHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_BROWSE),
+    positionControl(mBrowse,
                     width - margin - browseWidth,
                     scaleForWindow(GetHwnd(), 33),
                     browseWidth,
                     browseHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_ENCODING_LABEL),
+    positionControl(mEncodingLabel,
                     margin,
                     scaleForWindow(GetHwnd(), 62),
                     labelWidth,
                     labelHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_ENCODING),
+    positionControl(mEncoding,
                     inputLeft,
                     scaleForWindow(GetHwnd(), 60),
                     scaleForWindow(GetHwnd(), 112),
                     scaleForWindow(GetHwnd(), 100));
-    positionControl(GetDlgItem(IDC_COMMAND_SHELL),
+    positionControl(mShell,
                     inputLeft,
                     scaleForWindow(GetHwnd(), 87),
                     scaleForWindow(GetHwnd(), 80),
                     inputHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_AUTO_START),
+    positionControl(mAutoStart,
                     inputLeft + scaleForWindow(GetHwnd(), 90),
                     scaleForWindow(GetHwnd(), 87),
                     scaleForWindow(GetHwnd(), 100),
                     inputHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_LINE_LABEL),
+    positionControl(mCommandLineLabel,
                     margin,
                     scaleForWindow(GetHwnd(), 116),
                     labelWidth,
@@ -405,12 +378,12 @@ void CommandDialog::layoutControls() {
                     commandLineTop,
                     inputWidth,
                     commandLineHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_CANCEL),
+    positionControl(mCancel,
                     width - margin - buttonWidth,
                     buttonY,
                     buttonWidth,
                     buttonHeight);
-    positionControl(GetDlgItem(IDC_COMMAND_SAVE),
+    positionControl(mSave,
                     width - margin - buttonWidth - buttonGap - buttonWidth,
                     buttonY,
                     buttonWidth,
@@ -418,17 +391,15 @@ void CommandDialog::layoutControls() {
 }
 
 void CommandDialog::save() {
-    const std::wstring name = trim(
-        readText(GetDlgItem(IDC_COMMAND_NAME)));
-    const std::wstring workingDirectory = trim(
-        readText(GetDlgItem(IDC_COMMAND_WORKING_DIRECTORY)));
+    const std::wstring name = trim(readText(mName));
+    const std::wstring workingDirectory = trim(readText(mWorkingDirectory));
     const std::wstring commandLine = readText(mCommandLine);
     if (name.empty() || trim(commandLine).empty()) {
         MessageBox(L"Name and command line are required.",
                    L"Invalid Command",
                    MB_OK | MB_ICONWARNING);
         if (name.empty()) {
-            GetDlgItem(IDC_COMMAND_NAME).SetFocus();
+            mName.SetFocus();
         } else {
             mCommandLine.SetFocus();
         }
@@ -441,33 +412,31 @@ void CommandDialog::save() {
         MessageBox(L"The working directory does not exist.",
                    L"Invalid Command",
                    MB_OK | MB_ICONWARNING);
-        GetDlgItem(IDC_COMMAND_WORKING_DIRECTORY).SetFocus();
+        mWorkingDirectory.SetFocus();
         return;
     }
 
     const std::wstring encoding = selectedEncoding(mEncoding);
-    mResult = CommandConfig(
-        name,
-        workingDirectory,
-        commandLine,
-        narrowEncoding(encoding),
-        mDraft.mId,
-        mAutoStart.GetCheck() == BST_CHECKED,
-        mShell.GetCheck() == BST_CHECKED);
+    mResult = CommandConfig(name,
+                             workingDirectory,
+                             commandLine,
+                             narrowEncoding(encoding),
+                             mDraft.mId,
+                             mAutoStart.GetCheck() == BST_CHECKED,
+                             mShell.GetCheck() == BST_CHECKED);
     EndDialog(IDC_COMMAND_SAVE);
 }
 
 void CommandDialog::browseForDirectory() {
     Win32xx::CFolderDialog folderDialog;
     folderDialog.SetTitle(L"Select Working Directory");
-    const Win32xx::CString currentDirectory =
-        GetDlgItemText(IDC_COMMAND_WORKING_DIRECTORY);
+    const Win32xx::CString currentDirectory = mWorkingDirectory.GetWindowText();
     if (!currentDirectory.IsEmpty()) {
         folderDialog.SetSelection(currentDirectory.c_str());
     }
     if (folderDialog.DoModal(GetHwnd()) == IDOK) {
         const Win32xx::CString folder = folderDialog.GetFolderPath();
-        SetDlgItemText(IDC_COMMAND_WORKING_DIRECTORY, folder.c_str());
+        mWorkingDirectory.SetWindowText(folder.c_str());
     }
 }
 

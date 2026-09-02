@@ -13,7 +13,8 @@
 
 namespace command_runner {
 
-class Application final : public ui::MainWindowHost,
+class Application final : public Win32xx::CWinApp,
+                          public ui::MainWindowHost,
                           public platform::TrayIconListener {
 public:
     Application(HINSTANCE instance,
@@ -54,17 +55,23 @@ private:
     void finishExit();
     void postDeferred(UINT message) const noexcept;
 
-    Win32xx::CWinApp mWinApp;
     HINSTANCE mInstance{};
     ConfigData mConfiguration;
     ConfigStore& mStore;
     ProcessManager& mProcessManager;
     std::unique_ptr<ui::MainWindow> mWindow;
     std::unique_ptr<platform::TrayIcon> mTray;
+    Win32xx::CWnd* mExitTimerOwner{};
     DWORD mThreadId{};
     UINT_PTR mExitPollTimer{};
+    int mShowCommand{SW_SHOWNORMAL};
+    DWORD mStartupError{};
     bool mExitRequested{};
     bool mExitFinished{};
+
+protected:
+    BOOL InitInstance() override;
+    BOOL PreTranslateMessage(MSG& message) override;
 };
 
 }  // namespace command_runner

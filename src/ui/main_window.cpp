@@ -1,7 +1,8 @@
 #include "ui/main_window.h"
 
-#include "ui/command_dialog.h"
 #include "resource.h"
+#include "ui/command_dialog.h"
+#include "ui/win32xx_helpers.h"
 
 #include <CommCtrl.h>
 #include <Richedit.h>
@@ -10,9 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <ctime>
-#include <expected>
 #include <iomanip>
-#include <iterator>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -24,32 +23,28 @@ namespace {
 
 constexpr std::size_t ACTION_BUTTON_COUNT = 6;
 
-constexpr std::array<int, ACTION_BUTTON_COUNT> ACTION_BUTTON_IDS{
-    1001,
-    1002,
-    1003,
-    1004,
-    1005,
-    1006,
-};
+constexpr std::array<const wchar_t*, ACTION_BUTTON_COUNT>
+    ACTION_BUTTON_LABELS{
+        L"&Add",
+        L"&Edit",
+        L"&Delete",
+        L"&Start",
+        L"S&top",
+        L"&Restart",
+    };
 
-constexpr std::array<const wchar_t*, ACTION_BUTTON_COUNT> ACTION_BUTTON_LABELS{
-    L"&Add",
-    L"&Edit",
-    L"&Delete",
-    L"&Start",
-    L"S&top",
-    L"&Restart",
-};
+constexpr std::array<int, ACTION_BUTTON_COUNT>
+    ACTION_BUTTON_IDS{
+        1001,
+        1002,
+        1003,
+        1004,
+        1005,
+        1006,
+    };
 
-constexpr std::array<int, ACTION_BUTTON_COUNT> ACTION_BUTTON_WIDTHS{
-    62,
-    62,
-    74,
-    66,
-    66,
-    80,
-};
+constexpr std::array<int, ACTION_BUTTON_COUNT>
+    ACTION_BUTTON_WIDTHS{62, 62, 74, 66, 66, 80};
 
 constexpr std::array<const wchar_t*, 6> COLUMN_LABELS{
     L"Name",
@@ -60,14 +55,7 @@ constexpr std::array<const wchar_t*, 6> COLUMN_LABELS{
     L"Working Directory",
 };
 
-constexpr std::array<int, 5> FIXED_COLUMN_WIDTHS{
-    180,
-    100,
-    80,
-    70,
-    80,
-};
-
+constexpr std::array<int, 5> FIXED_COLUMN_WIDTHS{180, 100, 80, 70, 80};
 constexpr COLORREF STDERR_COLOR = RGB(198, 40, 40);
 
 [[nodiscard]] std::wstring numberOrEmpty(
@@ -80,7 +68,225 @@ constexpr COLORREF STDERR_COLOR = RGB(198, 40, 40);
     return value ? std::to_wstring(*value) : std::wstring{};
 }
 
+[[nodiscard]] std::wstring stateText(const RuntimeSnapshot& runtime) {
+    return stateToString(runtime.mState);
+}
+
 }  // namespace
+
+LRESULT CommandListView::WndProc(UINT message,
+                                 WPARAM wParam,
+                                 LPARAM lParam) {
+    if (message == WM_LBUTTONDOWN) {
+        const int item = HitTest(Win32xx::CPoint(lParam));
+        if (item >= 0 && (GetKeyState(VK_SHIFT) & 0x8000) == 0) {
+            mSelectionAnchorIndex = item;
+        }
+    }
+
+    if (message == WM_KEYDOWN) {
+        const bool controlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        const bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        switch (wParam) {
+        case 'A':
+            if (controlPressed) {
+                const int count = GetItemCount();
+                if (count > 0) {
+                    SetItemState(-1, LVIS_SELECTED, LVIS_SELECTED);
+                    SetItemState(0, LVIS_FOCUSED, LVIS_FOCUSED);
+                    mSelectionAnchorIndex = 0;
+                    notifySelectionChanged();
+                }
+                return 0;
+            }
+            break;
+        case VK_UP:
+            if (shiftPressed) {
+                selectRange(focusedItem() - 1);
+                return 0;
+            }
+            if (controlPressed) {
+                moveFocus(-1);
+                return 0;
+            }
+            break;
+        case VK_DOWN:
+            if (shiftPressed) {
+                selectRange(focusedItem() + 1);
+                return 0;
+            }
+            if (controlPressed) {
+                moveFocus(1);
+                return 0;
+            }
+            break;
+        case VK_HOME:
+            moveToBoundary(false, !controlPressed);
+            return 0;
+        case VK_END:
+            moveToBoundary(true, !controlPressed);
+            return 0;
+        case VK_RETURN:
+            if (mListener != nullptr) {
+                mListener->onListActivated();
+            }
+            return 0;
+        case VK_DELETE:
+            if (mListener != nullptr && GetSelectedCount() != 0) {
+                mListener->onListDeleteRequested();
+            }
+            return 0;
+        case VK_SPACE:
+            toggleFocusedSelection();
+            return 0;
+        default:
+            break;
+        }
+    }
+
+    return WndProcDefault(message, wParam, lParam);
+}
+
+int CommandListView::focusedItem() const {
+    if (!IsWindow()) {
+        return -1;
+    }
+    return GetNextItem(-1, LVNI_FOCUSED);
+}
+
+void CommandListView::notifySelectionChanged() {
+    if (mListener != nullptr) {
+        mListener->onListSelectionChanged();
+    }
+}
+
+void CommandListView::selectRange(int targetIndex) {
+    const int count = GetItemCount();
+    if (count == 0) {
+        return;
+    }
+
+    const int currentIndex = focusedItem();
+    const int anchor = mSelectionAnchorIndex >= 0 &&
+                               mSelectionAnchorIndex < count
+                           ? mSelectionAnchorIndex
+                           : (currentIndex >= 0 ? currentIndex : 0);
+    const int target = std::clamp(targetIndex, 0, count - 1);
+
+    SetItemState(-1, 0, LVIS_SELECTED);
+    for (int index = std::min(anchor, target);
+         index <= std::max(anchor, target);
+         ++index) {
+        SetItemState(index, LVIS_SELECTED, LVIS_SELECTED);
+    }
+    SetItemState(target, LVIS_FOCUSED, LVIS_FOCUSED);
+    EnsureVisible(target, FALSE);
+    notifySelectionChanged();
+}
+
+void CommandListView::moveFocus(int direction) {
+    const int count = GetItemCount();
+    if (count == 0) {
+        return;
+    }
+    const int current = focusedItem();
+    const int start = current >= 0 ? current : 0;
+    const int target = std::clamp(start + direction, 0, count - 1);
+    SetItemState(target, LVIS_FOCUSED, LVIS_FOCUSED);
+    EnsureVisible(target, FALSE);
+}
+
+void CommandListView::moveToBoundary(bool last, bool select) {
+    const int count = GetItemCount();
+    if (count == 0) {
+        return;
+    }
+    const int target = last ? count - 1 : 0;
+    if (select) {
+        SetItemState(-1, 0, LVIS_SELECTED);
+        SetItemState(target, LVIS_SELECTED, LVIS_SELECTED);
+        notifySelectionChanged();
+    }
+    SetItemState(target, LVIS_FOCUSED, LVIS_FOCUSED);
+    mSelectionAnchorIndex = target;
+    EnsureVisible(target, FALSE);
+}
+
+void CommandListView::toggleFocusedSelection() {
+    const int item = focusedItem();
+    if (item < 0) {
+        return;
+    }
+    const bool selected = (GetItemState(item, LVIS_SELECTED) &
+                           LVIS_SELECTED) != 0;
+    SetItemState(item,
+                 (selected ? 0U : LVIS_SELECTED) | LVIS_FOCUSED,
+                 LVIS_SELECTED | LVIS_FOCUSED);
+    mSelectionAnchorIndex = item;
+    EnsureVisible(item, FALSE);
+    notifySelectionChanged();
+}
+
+LRESULT Splitter::WndProc(UINT message,
+                          WPARAM wParam,
+                          LPARAM lParam) {
+    (void)wParam;
+    switch (message) {
+    case WM_SETCURSOR:
+        ::SetCursor(::LoadCursorW(nullptr, IDC_SIZENS));
+        return TRUE;
+    case WM_LBUTTONDOWN:
+        mDragging = true;
+        SetCapture();
+        return 0;
+    case WM_MOUSEMOVE:
+        if (mDragging && mListener != nullptr) {
+            Win32xx::CPoint point(lParam);
+            if (ClientToScreen(point) != FALSE) {
+                mListener->onSplitterMoved(point);
+            }
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        mDragging = false;
+        if (static_cast<HWND>(GetCapture()) == GetHwnd()) {
+            ::ReleaseCapture();
+        }
+        return 0;
+    case WM_CAPTURECHANGED:
+        mDragging = false;
+        return 0;
+    case WM_PAINT:
+        try {
+            Win32xx::CPaintDC paint(GetHwnd());
+            const Win32xx::CRect client = GetClientRect();
+            paint.FillRect(client,
+                           static_cast<HBRUSH>(
+                               ::GetStockObject(COLOR_3DFACE + 1)));
+            paint.DrawEdge(client, EDGE_RAISED, BF_RECT);
+        } catch (const Win32xx::CException&) {
+            return 0;
+        }
+        return 0;
+    default:
+        return WndProcDefault(message, wParam, lParam);
+    }
+}
+
+void Splitter::PreRegisterClass(WNDCLASS& windowClass) {
+    windowClass.lpszClassName = L"CommandRunner.HorizontalSplitter";
+    windowClass.hCursor = ::LoadCursorW(nullptr, IDC_SIZENS);
+}
+
+void Splitter::PreCreate(CREATESTRUCT& createStruct) {
+    createStruct.style = WS_CHILD | WS_VISIBLE | WS_TABSTOP;
+    createStruct.dwExStyle = 0;
+    createStruct.x = 0;
+    createStruct.y = 0;
+    createStruct.cx = 0;
+    createStruct.cy = 0;
+    createStruct.lpszName = L"Horizontal splitter";
+}
 
 MainWindow::MainWindow(HINSTANCE instance,
                        ConfigData& configuration,
@@ -91,7 +297,10 @@ MainWindow::MainWindow(HINSTANCE instance,
       mConfiguration(configuration),
       mStore(store),
       mProcessManager(processManager),
-      mHost(host) {}
+      mHost(host) {
+    mListView.setListener(*this);
+    mSplitter.setListener(*this);
+}
 
 MainWindow::~MainWindow() {
     dispose();
@@ -102,82 +311,62 @@ void MainWindow::dispose() noexcept {
         return;
     }
     mDisposed = true;
-    if (mWindow != nullptr && ::IsWindow(mWindow) != FALSE) {
+    if (IsWindow()) {
+        KillTimer(PROCESS_EVENT_TIMER);
+    }
+    destroyControls();
+    if (IsWindow()) {
         Destroy();
-    }
-    mWindow = nullptr;
-    mActionBar = nullptr;
-    mOptionsBar = nullptr;
-    mListView = nullptr;
-    mSplitter = nullptr;
-    mLogLabel = nullptr;
-    mLogEdit = nullptr;
-    mActionButtons.fill(nullptr);
-    mCombinedRadio = nullptr;
-    mStdoutRadio = nullptr;
-    mStderrRadio = nullptr;
-    mClearButton = nullptr;
-    mJumpLatestButton = nullptr;
-    mWrapLinesCheck = nullptr;
-    mAutoScrollCheck = nullptr;
-    mListViewPreviousProc = nullptr;
-    if (mUiFont != nullptr) {
-        DeleteObject(mUiFont);
-        mUiFont = nullptr;
-    }
-    if (mLogFont != nullptr) {
-        DeleteObject(mLogFont);
-        mLogFont = nullptr;
-    }
-    if (mRichEditModule != nullptr) {
-        FreeLibrary(mRichEditModule);
-        mRichEditModule = nullptr;
     }
 }
 
 std::expected<void, DWORD> MainWindow::create(int showCommand) {
     mDisposed = false;
     try {
-        mWindow = Create();
-    } catch (const Win32xx::CException& exception) {
-        dispose();
-        return std::unexpected(lastErrorOr(exception.GetError()));
-    }
+        if (!IsWindow()) {
+            Create();
+        }
 
-    const auto controls = createControls();
-    if (!controls) {
-        const DWORD error = controls.error();
+        const auto controls = createControls();
+        if (!controls) {
+            const DWORD error = controls.error();
+            dispose();
+            return std::unexpected(error);
+        }
+
+        mCurrentDpi = windowDpi(GetHwnd());
+        updateControlFonts();
+        updateLogFont();
+        layoutControls();
+        refreshRows();
+        refreshLogs();
+        updateLogOptions();
+        if (SetTimer(PROCESS_EVENT_TIMER,
+                     PROCESS_EVENT_INTERVAL_MILLISECONDS,
+                     nullptr) == 0) {
+            const DWORD error = lastWin32ErrorOr(ERROR_FUNCTION_FAILED);
+            dispose();
+            return std::unexpected(error);
+        }
+        ShowWindow(showCommand);
+        UpdateWindow();
+    } catch (const Win32xx::CException& exception) {
+        const DWORD error = exception.GetError() == ERROR_SUCCESS
+                                ? ERROR_FUNCTION_FAILED
+                                : exception.GetError();
         dispose();
         return std::unexpected(error);
     }
-
-    mCurrentDpi = GetDpiForWindow(mWindow);
-    if (mCurrentDpi == 0) {
-        mCurrentDpi = DEFAULT_DPI;
-    }
-    updateControlFonts();
-    updateLogFont();
-    layoutControls();
-    refreshRows();
-    refreshLogs();
-    updateLogOptions();
-    ::SetTimer(mWindow,
-                PROCESS_EVENT_TIMER,
-                PROCESS_EVENT_INTERVAL_MILLISECONDS,
-                nullptr);
-
-    ::ShowWindow(mWindow, showCommand);
-    ::UpdateWindow(mWindow);
     return {};
 }
 
 void MainWindow::PreRegisterClass(WNDCLASS& windowClass) {
     windowClass.style = CS_HREDRAW | CS_VREDRAW;
     windowClass.lpszClassName = WINDOW_CLASS_NAME;
-    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
     windowClass.hIcon = GetApp()->LoadIcon(IDI_COMMAND_RUNNER);
     if (windowClass.hIcon == nullptr) {
-        windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        windowClass.hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);
     }
     windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
 }
@@ -193,947 +382,390 @@ void MainWindow::PreCreate(CREATESTRUCT& createStruct) {
     createStruct.lpszName = L"Command Runner";
 }
 
-LRESULT CALLBACK MainWindow::listViewProc(HWND window,
-                                          UINT message,
-                                          WPARAM wParam,
-                                          LPARAM lParam) {
-    auto* self = reinterpret_cast<MainWindow*>(
-        ::GetWindowLongPtrW(window, GWLP_USERDATA));
-    if (self == nullptr) {
-        return ::DefWindowProcW(window, message, wParam, lParam);
-    }
-    if (message == WM_NOTIFY) {
-        // The list-view control must process notifications from its header
-        // control so a dragged header divider updates the item layout too.
-        return self->forwardListViewMessage(message, wParam, lParam);
-    }
-    return self->handleListViewMessage(message, wParam, lParam);
-}
-
-LRESULT CALLBACK MainWindow::splitterProc(HWND window,
-                                          UINT message,
-                                          WPARAM wParam,
-                                          LPARAM lParam) {
-    auto* self = reinterpret_cast<MainWindow*>(
-        ::GetWindowLongPtrW(window, GWLP_USERDATA));
-    if (message == WM_NCCREATE) {
-        const auto* createStruct = reinterpret_cast<const CREATESTRUCTW*>(lParam);
-        if (createStruct == nullptr || createStruct->lpCreateParams == nullptr) {
-            return FALSE;
-        }
-        self = static_cast<MainWindow*>(createStruct->lpCreateParams);
-        ::SetWindowLongPtrW(window,
-                            GWLP_USERDATA,
-                            reinterpret_cast<LONG_PTR>(self));
-    }
-    if (self == nullptr) {
-        return ::DefWindowProcW(window, message, wParam, lParam);
-    }
-
-    switch (message) {
-    case WM_SETCURSOR:
-        SetCursor(LoadCursorW(nullptr, IDC_SIZENS));
-        return TRUE;
-    case WM_LBUTTONDOWN:
-        self->mSplitterDragging = true;
-        ::SetCapture(window);
-        return 0;
-    case WM_MOUSEMOVE:
-        if (self->mSplitterDragging) {
-            POINT point{
-                GET_X_LPARAM(lParam),
-                GET_Y_LPARAM(lParam),
-            };
-            ::ClientToScreen(window, &point);
-            ::ScreenToClient(self->mWindow, &point);
-            self->setSplitterFromClientY(point.y);
-        }
-        return 0;
-    case WM_LBUTTONUP:
-        self->mSplitterDragging = false;
-        if (::GetCapture() == window) {
-            ::ReleaseCapture();
-        }
-        return 0;
-    case WM_CAPTURECHANGED:
-        self->mSplitterDragging = false;
-        return 0;
-    case WM_PAINT: {
-        PAINTSTRUCT paint{};
-        const HDC deviceContext = ::BeginPaint(window, &paint);
-        if (deviceContext == nullptr) {
-            return 0;
-        }
-        RECT client{};
-        ::GetClientRect(window, &client);
-        ::FillRect(deviceContext,
-                   &client,
-                   reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1));
-        ::DrawEdge(deviceContext, &client, EDGE_RAISED, BF_RECT);
-        ::EndPaint(window, &paint);
-        return 0;
-    }
-    default:
-        return ::DefWindowProcW(window, message, wParam, lParam);
-    }
-}
-
-LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-    case WM_SYSCOMMAND:
-        if ((wParam & 0xFFF0U) == SC_MINIMIZE) {
-            mHost.onMainWindowMinimizeRequested();
-            return 0;
-        }
-        break;
-    case WM_CLOSE:
-        mHost.onMainWindowCloseRequested();
-        return 0;
-    case WM_GETMINMAXINFO: {
-        auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
-        if (limits == nullptr) {
-            return WndProcDefault(message, wParam, lParam);
-        }
-        limits->ptMinTrackSize.x = scaleForWindow(mWindow, MINIMUM_WINDOW_WIDTH);
-        limits->ptMinTrackSize.y = scaleForWindow(mWindow, MINIMUM_WINDOW_HEIGHT);
-        return 0;
-    }
-    case WM_DPICHANGED: {
-        const auto* suggested = reinterpret_cast<const RECT*>(lParam);
-        if (suggested != nullptr) {
-            ::SetWindowPos(mWindow,
-                           nullptr,
-                           suggested->left,
-                           suggested->top,
-                           suggested->right - suggested->left,
-                           suggested->bottom - suggested->top,
-                           SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        const UINT windowDpi = GetDpiForWindow(mWindow);
-        mCurrentDpi = windowDpi != 0 ? windowDpi : LOWORD(wParam);
-        if (mCurrentDpi == 0) {
-            mCurrentDpi = DEFAULT_DPI;
-        }
-        updateControlFonts();
-        updateLogFont();
-        layoutControls();
-        return 0;
-    }
-    case WM_SIZE:
-        layoutControls();
-        return 0;
-    case WM_TIMER:
-        if (wParam == PROCESS_EVENT_TIMER) {
-            pollProcessEvents();
-            return 0;
-        }
-        break;
-    case WM_COMMAND: {
-        const int controlId = LOWORD(wParam);
-        const int notificationCode = HIWORD(wParam);
-        if (controlId == IDC_LOG_LABEL && notificationCode == STN_CLICKED) {
-            ::SetFocus(mLogEdit);
-            return 0;
-        }
-        if (notificationCode != BN_CLICKED) {
-            break;
-        }
-        switch (controlId) {
-        case IDC_ADD:
-            addCommand();
-            return 0;
-        case IDC_EDIT:
-            editSelectedCommand();
-            return 0;
-        case IDC_DELETE:
-            deleteSelectedCommands();
-            return 0;
-        case IDC_START:
-            startSelected();
-            return 0;
-        case IDC_STOP:
-            stopSelected();
-            return 0;
-        case IDC_RESTART:
-            restartSelected();
-            return 0;
-        case IDC_LOG_COMBINED:
-            mLogView = LogView::COMBINED;
-            updateLogOptions();
-            refreshLogs();
-            return 0;
-        case IDC_LOG_STDOUT:
-            mLogView = LogView::STDOUT;
-            updateLogOptions();
-            refreshLogs();
-            return 0;
-        case IDC_LOG_STDERR:
-            mLogView = LogView::STDERR;
-            updateLogOptions();
-            refreshLogs();
-            return 0;
-        case IDC_CLEAR:
-            clearLogs();
-            return 0;
-        case IDC_JUMP_LATEST:
-            ::SendMessageW(mLogEdit,
-                            EM_SETSEL,
-                            static_cast<WPARAM>(-1),
-                            static_cast<LPARAM>(-1));
-            ::SendMessageW(mLogEdit, EM_SCROLLCARET, 0, 0);
-            return 0;
-        case IDC_WRAP_LINES:
-            mConfiguration.mPreferences.mWrapLines =
-                ::SendMessageW(mWrapLinesCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            updateLogOptions();
-            refreshLogs();
-            savePreferences();
-            return 0;
-        case IDC_AUTO_SCROLL:
-            mConfiguration.mPreferences.mAutoScroll =
-                ::SendMessageW(mAutoScrollCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            savePreferences();
-            return 0;
-        default:
-            break;
-        }
-        break;
-    }
-    case WM_NOTIFY:
-        return handleListViewMessage(message, wParam, lParam);
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_DESTROY:
-        ::KillTimer(mWindow, PROCESS_EVENT_TIMER);
-        return 0;
-    default:
-        break;
-    }
-    return WndProcDefault(message, wParam, lParam);
-}
-
-LRESULT MainWindow::handleListViewMessage(UINT message,
-                                          WPARAM wParam,
-                                          LPARAM lParam) {
-    if (message == WM_NOTIFY) {
-        const auto* header = reinterpret_cast<const NMHDR*>(lParam);
-        if (header == nullptr || header->hwndFrom != mListView) {
-            return ::DefWindowProcW(mWindow, message, wParam, lParam);
-        }
-        if (header->code == LVN_ITEMCHANGED) {
-            if (!mUpdatingList) {
-                syncSelection();
-            }
-            return 0;
-        }
-        if (header->code == NM_DBLCLK) {
-            const auto* activation =
-                reinterpret_cast<const NMITEMACTIVATE*>(lParam);
-            if (activation != nullptr && activation->iItem >= 0 &&
-                activation->iItem < ListView_GetItemCount(mListView)) {
-                mUpdatingList = true;
-                ListView_SetItemState(mListView,
-                                      -1,
-                                      0,
-                                      LVIS_SELECTED | LVIS_FOCUSED);
-                ListView_SetItemState(mListView,
-                                      activation->iItem,
-                                      LVIS_SELECTED | LVIS_FOCUSED,
-                                      LVIS_SELECTED | LVIS_FOCUSED);
-                mUpdatingList = false;
-                mSelectionAnchorIndex = activation->iItem;
-                syncSelection();
-                if (mSelectedCommandIds.size() == 1) {
-                    const CommandConfig* command =
-                        commandById(mSelectedCommandIds.front());
-                    if (command != nullptr && isEditable(*command)) {
-                        editSelectedCommand();
-                    }
-                }
-            }
-            return 0;
-        }
-        return ::DefWindowProcW(mWindow, message, wParam, lParam);
-    }
-
-    if (message == WM_LBUTTONDOWN) {
-        LVHITTESTINFO hitTest{};
-        hitTest.pt.x = GET_X_LPARAM(lParam);
-        hitTest.pt.y = GET_Y_LPARAM(lParam);
-        const int item = ListView_HitTest(mListView, &hitTest);
-        if (item >= 0 && (GetKeyState(VK_SHIFT) & 0x8000) == 0) {
-            mSelectionAnchorIndex = item;
-        }
-    }
-
-    if (message == WM_KEYDOWN) {
-        const bool controlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-        const bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-        switch (wParam) {
-        case 'A':
-            if (controlPressed) {
-                const int count = ListView_GetItemCount(mListView);
-                if (count > 0) {
-                    mUpdatingList = true;
-                    ListView_SetItemState(mListView,
-                                          -1,
-                                          LVIS_SELECTED,
-                                          LVIS_SELECTED);
-                    ListView_SetItemState(mListView,
-                                          0,
-                                          LVIS_FOCUSED,
-                                          LVIS_FOCUSED);
-                    mUpdatingList = false;
-                    mSelectionAnchorIndex = 0;
-                    syncSelection();
-                }
-                return 0;
-            }
-            break;
-        case VK_UP:
-            if (shiftPressed) {
-                selectRange(mSelectionAnchorIndex, focusedItem() - 1);
-                return 0;
-            }
-            if (controlPressed) {
-                moveFocus(-1);
-                return 0;
-            }
-            break;
-        case VK_DOWN:
-            if (shiftPressed) {
-                selectRange(mSelectionAnchorIndex, focusedItem() + 1);
-                return 0;
-            }
-            if (controlPressed) {
-                moveFocus(1);
-                return 0;
-            }
-            break;
-        case VK_HOME:
-            moveToBoundary(false, !controlPressed);
-            return 0;
-        case VK_END:
-            moveToBoundary(true, !controlPressed);
-            return 0;
-        case VK_RETURN:
-            invokeEditIfAvailable();
-            return 0;
-        case VK_DELETE:
-            if (!mSelectedCommandIds.empty()) {
-                deleteSelectedCommands();
-            }
-            return 0;
-        case VK_SPACE:
-            toggleFocusedSelection();
-            return 0;
-        default:
-            break;
-        }
-    }
-
-    return forwardListViewMessage(message, wParam, lParam);
-}
-
-LRESULT MainWindow::forwardListViewMessage(UINT message,
-                                           WPARAM wParam,
-                                           LPARAM lParam) const {
-    if (mListViewPreviousProc == nullptr) {
-        return ::DefWindowProcW(mListView, message, wParam, lParam);
-    }
-    return ::CallWindowProcW(mListViewPreviousProc,
-                             mListView,
-                             message,
-                             wParam,
-                             lParam);
-}
-
 std::expected<void, DWORD> MainWindow::createControls() {
-    const auto splitterClass = registerSplitterClass();
-    if (!splitterClass) {
-        return splitterClass;
-    }
+    constexpr DWORD childStyle = WS_CHILD | WS_VISIBLE;
 
-    mRichEditModule = LoadLibraryW(L"Msftedit.dll");
-    if (mRichEditModule == nullptr) {
-        const DWORD error = GetLastError();
-        return std::unexpected(error == ERROR_SUCCESS ? ERROR_MOD_NOT_FOUND
-                                                       : error);
-    }
-
-    const DWORD childStyle = WS_CHILD | WS_VISIBLE;
-    mActionBar = CreateWindowExW(0,
-                                 L"STATIC",
-                                 nullptr,
-                                 childStyle,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 mWindow,
-                                 nullptr,
-                                 mInstance,
-                                 nullptr);
-    mOptionsBar = CreateWindowExW(0,
-                                  L"STATIC",
-                                  nullptr,
-                                  childStyle,
-                                  0,
-                                  0,
-                                  0,
-                                  0,
-                                  mWindow,
-                                  nullptr,
-                                  mInstance,
-                                  nullptr);
-    mSplitter = CreateWindowExW(0,
-                                SPLITTER_CLASS_NAME,
-                                nullptr,
-                                childStyle | WS_TABSTOP,
-                                0,
-                                0,
-                                0,
-                                0,
-                                mWindow,
-                                nullptr,
-                                mInstance,
-                                this);
-    mListView = CreateWindowExW(WS_EX_CLIENTEDGE,
-                                WC_LISTVIEWW,
-                                nullptr,
-                                childStyle | WS_TABSTOP | LVS_REPORT |
-                                    LVS_SHOWSELALWAYS,
-                                0,
-                                0,
-                                0,
-                                0,
-                                mWindow,
-                                nullptr,
-                                mInstance,
-                                nullptr);
-    mLogLabel = CreateWindowExW(0,
-                                L"STATIC",
-                                L"Lo&g output",
-                                childStyle | SS_LEFT | SS_NOTIFY,
-                                0,
-                                0,
-                                0,
-                                0,
-                                mWindow,
-                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(1108)),
-                                mInstance,
-                                nullptr);
-    mLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE,
-                               MSFTEDIT_CLASS,
-                               nullptr,
-                               childStyle | WS_TABSTOP | ES_MULTILINE |
-                                   ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
-                                   WS_VSCROLL | WS_HSCROLL,
-                               0,
-                               0,
-                               0,
-                               0,
-                               mWindow,
-                               nullptr,
-                               mInstance,
-                               nullptr);
-
-    const std::array<bool, 6> requiredWindows{
-        mActionBar != nullptr,
-        mOptionsBar != nullptr,
-        mSplitter != nullptr,
-        mListView != nullptr,
-        mLogLabel != nullptr,
-        mLogEdit != nullptr,
+    auto create = [this](auto& control,
+                         DWORD exStyle,
+                         LPCWSTR className,
+                         LPCWSTR text,
+                         DWORD style,
+                         UINT id) {
+        return createChild(control,
+                           GetHwnd(),
+                           exStyle,
+                           className,
+                           text,
+                           style,
+                           0,
+                           0,
+                           0,
+                           0,
+                           id);
     };
-    if (std::ranges::any_of(requiredWindows,
-                            [](bool value) { return !value; })) {
-        const DWORD error = GetLastError();
-        return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED
-                                                       : error);
+
+    if (const auto result = create(mActionBar,
+                                   0,
+                                   L"Static",
+                                   nullptr,
+                                   childStyle,
+                                   0);
+        !result) {
+        return result;
+    }
+    if (const auto result = create(mOptionsBar,
+                                   0,
+                                   L"Static",
+                                   nullptr,
+                                   childStyle,
+                                   0);
+        !result) {
+        return result;
     }
 
-    const DWORD listStyle = ListView_GetExtendedListViewStyle(mListView);
-    ListView_SetExtendedListViewStyle(
-        mListView,
-        listStyle | LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES |
-            LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
-    ListView_SetUnicodeFormat(mListView, TRUE);
-    for (std::size_t index = 0; index < COLUMN_LABELS.size(); ++index) {
-        LVCOLUMNW column{};
-        column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-        column.pszText = const_cast<wchar_t*>(COLUMN_LABELS[index]);
-        column.cx = scaleForWindow(mWindow,
-                                    index < FIXED_COLUMN_WIDTHS.size()
-                                        ? FIXED_COLUMN_WIDTHS[index]
-                                        : MINIMUM_WORKING_DIRECTORY_WIDTH);
-        column.iSubItem = static_cast<int>(index);
-        ListView_InsertColumn(mListView, static_cast<int>(index), &column);
+    try {
+        mSplitter.Create(GetHwnd());
+    } catch (const Win32xx::CException& exception) {
+        const DWORD error = exception.GetError();
+        return std::unexpected(error == ERROR_SUCCESS
+                                   ? ERROR_FUNCTION_FAILED
+                                   : error);
     }
 
-    const auto setDefaultFont = [](HWND control) {
-        ::SendMessageW(control,
-                     WM_SETFONT,
-                     reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),
-                     TRUE);
-    };
-    setDefaultFont(mListView);
-    setDefaultFont(mLogLabel);
+    if (const auto result = create(mListView,
+                                   WS_EX_CLIENTEDGE,
+                                   WC_LISTVIEWW,
+                                   nullptr,
+                                   childStyle | WS_TABSTOP | LVS_REPORT |
+                                       LVS_SHOWSELALWAYS,
+                                   0);
+        !result) {
+        return result;
+    }
+    if (const auto result = create(mLogLabel,
+                                   0,
+                                   L"Static",
+                                   L"Lo&g output",
+                                   childStyle | SS_LEFT | SS_NOTIFY,
+                                   IDC_LOG_LABEL);
+        !result) {
+        return result;
+    }
+    if (const auto result = create(mLogEdit,
+                                   WS_EX_CLIENTEDGE,
+                                   MSFTEDIT_CLASS,
+                                   nullptr,
+                                   childStyle | WS_TABSTOP | ES_MULTILINE |
+                                       ES_READONLY | ES_AUTOVSCROLL |
+                                       ES_AUTOHSCROLL | WS_VSCROLL | WS_HSCROLL,
+                                   0);
+        !result) {
+        return result;
+    }
 
     for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
-        mActionButtons[index] = CreateWindowExW(
-            0,
-            L"BUTTON",
-            ACTION_BUTTON_LABELS[index],
-            childStyle | WS_TABSTOP | BS_PUSHBUTTON,
-            0,
-            0,
-            0,
-            0,
-            mWindow,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ACTION_BUTTON_IDS[index])),
-            mInstance,
-            nullptr);
-        if (mActionButtons[index] == nullptr) {
-            const DWORD error = GetLastError();
-            return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED
-                                                           : error);
+        if (const auto result = create(mActionButtons[index],
+                                       0,
+                                       L"Button",
+                                       ACTION_BUTTON_LABELS[index],
+                                       childStyle | WS_TABSTOP | BS_PUSHBUTTON,
+                                       ACTION_BUTTON_IDS[index]);
+            !result) {
+            return result;
         }
-        setDefaultFont(mActionButtons[index]);
     }
 
-    mCombinedRadio = CreateWindowExW(0,
-                                     L"BUTTON",
-                                     L"Co&mbined",
-                                     childStyle | WS_TABSTOP | BS_AUTORADIOBUTTON |
-                                         WS_GROUP,
-                                     0,
-                                     0,
-                                     0,
-                                     0,
-                                     mWindow,
-                                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(1101)),
-                                     mInstance,
-                                     nullptr);
-    mStdoutRadio = CreateWindowExW(0,
-                                   L"BUTTON",
-                                   L"stdo&ut",
-                                   childStyle | WS_TABSTOP | BS_AUTORADIOBUTTON,
-                                   0,
-                                   0,
-                                   0,
-                                   0,
-                                   mWindow,
-                                   reinterpret_cast<HMENU>(static_cast<INT_PTR>(1102)),
-                                   mInstance,
-                                   nullptr);
-    mStderrRadio = CreateWindowExW(
-        0,
-        L"BUTTON",
-        L"std&err",
-        childStyle | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        0,
-        0,
-        0,
-        0,
-        mWindow,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(1103)),
-        mInstance,
-        nullptr);
-    mClearButton = CreateWindowExW(0,
-                                   L"BUTTON",
-                                   L"&Clear",
-                                   childStyle | WS_TABSTOP | BS_PUSHBUTTON,
-                                   0,
-                                   0,
-                                   0,
-                                   0,
-                                   mWindow,
-                                   reinterpret_cast<HMENU>(static_cast<INT_PTR>(1104)),
-                                   mInstance,
-                                   nullptr);
-    mJumpLatestButton = CreateWindowExW(
-        0,
-        L"BUTTON",
-        L"&Jump to Latest",
-        childStyle | WS_TABSTOP | BS_PUSHBUTTON,
-        0,
-        0,
-        0,
-        0,
-        mWindow,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(1105)),
-        mInstance,
-        nullptr);
-    mWrapLinesCheck = CreateWindowExW(0,
-                                     L"BUTTON",
-                                     L"&Word wrap",
-                                     childStyle | WS_TABSTOP | BS_AUTOCHECKBOX,
-                                     0,
-                                     0,
-                                     0,
-                                     0,
-                                     mWindow,
-                                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(1106)),
-                                     mInstance,
-                                     nullptr);
-    mAutoScrollCheck = CreateWindowExW(
-        0,
-        L"BUTTON",
-        L"Auto-scro&ll",
-        childStyle | WS_TABSTOP | BS_AUTOCHECKBOX,
-        0,
-        0,
-        0,
-        0,
-        mWindow,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(1107)),
-        mInstance,
-        nullptr);
+    const std::array<std::pair<Win32xx::CButton*, std::pair<LPCWSTR, UINT>>, 7>
+        optionControls{
+            std::pair{&mCombinedRadio,
+                      std::pair{L"Co&mbined", static_cast<UINT>(IDC_LOG_COMBINED)}},
+            std::pair{&mStdoutRadio,
+                      std::pair{L"stdo&ut", static_cast<UINT>(IDC_LOG_STDOUT)}},
+            std::pair{&mStderrRadio,
+                      std::pair{L"std&err", static_cast<UINT>(IDC_LOG_STDERR)}},
+            std::pair{&mClearButton,
+                      std::pair{L"&Clear", static_cast<UINT>(IDC_CLEAR)}},
+            std::pair{&mJumpLatestButton,
+                      std::pair{L"&Jump to Latest",
+                                static_cast<UINT>(IDC_JUMP_LATEST)}},
+            std::pair{&mWrapLinesCheck,
+                      std::pair{L"&Word wrap", static_cast<UINT>(IDC_WRAP_LINES)}},
+            std::pair{&mAutoScrollCheck,
+                      std::pair{L"Auto-scro&ll",
+                                static_cast<UINT>(IDC_AUTO_SCROLL)}},
+        };
 
-    const std::array<HWND, 7> optionControls{
-        mCombinedRadio,
-        mStdoutRadio,
-        mStderrRadio,
-        mClearButton,
-        mJumpLatestButton,
-        mWrapLinesCheck,
-        mAutoScrollCheck,
-    };
-    if (std::ranges::any_of(optionControls,
-                            [](HWND control) { return control == nullptr; })) {
-        const DWORD error = GetLastError();
-        return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED
-                                                       : error);
-    }
-    for (const HWND control : optionControls) {
-        setDefaultFont(control);
+    for (std::size_t index = 0; index < optionControls.size(); ++index) {
+        const auto [control, definition] = optionControls[index];
+        const auto [text, id] = definition;
+        const DWORD style = childStyle | WS_TABSTOP |
+                            (index < 3 ? BS_AUTORADIOBUTTON
+                                       : (index < 5 ? BS_PUSHBUTTON
+                                                    : BS_AUTOCHECKBOX));
+        const DWORD radioGroup = index == 0 ? WS_GROUP : 0;
+        if (const auto result = create(*control,
+                                       0,
+                                       L"Button",
+                                       text,
+                                       style | radioGroup,
+                                       id);
+            !result) {
+            return result;
+        }
     }
 
-    ::SendMessageW(mLogEdit, EM_EXLIMITTEXT, 0, 1'048'576);
-    ::SendMessageW(mLogEdit, EM_HIDESELECTION, TRUE, 0);
-    ::SendMessageW(mLogEdit, EM_SETBKGNDCOLOR, 0, RGB(255, 255, 255));
-
-    SetLastError(ERROR_SUCCESS);
-    mListViewPreviousProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(
-        mListView,
-        GWLP_WNDPROC,
-        reinterpret_cast<LONG_PTR>(&MainWindow::listViewProc)));
-    if (mListViewPreviousProc == nullptr && GetLastError() != ERROR_SUCCESS) {
-        const DWORD error = GetLastError();
-        return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED
-                                                       : error);
+    mListView.SetExtendedStyle(mListView.GetExtendedStyle() |
+                               LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES |
+                               LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
+    setListViewUnicodeFormat(mListView);
+    for (std::size_t index = 0; index < COLUMN_LABELS.size(); ++index) {
+        const int width = scaleForWindow(
+            GetHwnd(),
+            index < FIXED_COLUMN_WIDTHS.size()
+                ? FIXED_COLUMN_WIDTHS[index]
+                : MINIMUM_WORKING_DIRECTORY_WIDTH);
+        mListView.InsertColumn(static_cast<int>(index),
+                               COLUMN_LABELS[index],
+                               LVCFMT_LEFT,
+                               width,
+                               static_cast<int>(index));
     }
-    ::SetWindowLongPtrW(mListView,
-                        GWLP_USERDATA,
-                        reinterpret_cast<LONG_PTR>(this));
+
+    mLogEdit.LimitText(1'048'576);
+    mLogEdit.HideSelection(TRUE, FALSE);
+    mLogEdit.SetBackgroundColor(TRUE, RGB(255, 255, 255));
     return {};
 }
 
-std::expected<void, DWORD> MainWindow::registerSplitterClass() const {
-    WNDCLASSEXW splitterClass{};
-    splitterClass.cbSize = sizeof(WNDCLASSEXW);
-    splitterClass.hInstance = mInstance;
-    splitterClass.lpfnWndProc = &MainWindow::splitterProc;
-    splitterClass.lpszClassName = SPLITTER_CLASS_NAME;
-    splitterClass.hCursor = LoadCursorW(nullptr, IDC_SIZENS);
-    splitterClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1);
-    if (RegisterClassExW(&splitterClass) == 0) {
-        const DWORD error = GetLastError();
-        if (error != ERROR_CLASS_ALREADY_EXISTS) {
-            return std::unexpected(error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED
-                                                           : error);
-        }
+void MainWindow::destroyControls() noexcept {
+    mLogEdit.Destroy();
+    mLogLabel.Destroy();
+    mListView.Destroy();
+    mSplitter.Destroy();
+    for (auto& button : mActionButtons) {
+        button.Destroy();
     }
-    return {};
+    mCombinedRadio.Destroy();
+    mStdoutRadio.Destroy();
+    mStderrRadio.Destroy();
+    mClearButton.Destroy();
+    mJumpLatestButton.Destroy();
+    mWrapLinesCheck.Destroy();
+    mAutoScrollCheck.Destroy();
+    mOptionsBar.Destroy();
+    mActionBar.Destroy();
 }
 
 void MainWindow::layoutControls() {
-    if (mWindow == nullptr || mListView == nullptr) {
+    if (!IsWindow() || !mListView.IsWindow()) {
         return;
     }
-    RECT client{};
-    ::GetClientRect(mWindow, &client);
-    const int width = std::max(0L, client.right - client.left);
-    const int height = std::max(0L, client.bottom - client.top);
-    const int margin = scaleForWindow(mWindow, CONTENT_MARGIN);
-    const int actionBarHeight = scaleForWindow(mWindow, ACTION_BAR_HEIGHT);
+
+    const Win32xx::CRect client = GetClientRect();
+    const int width = std::max(0, client.Width());
+    const int height = std::max(0, client.Height());
+    const int margin = scaleForWindow(GetHwnd(), CONTENT_MARGIN);
+    const int actionBarHeight = scaleForWindow(GetHwnd(), ACTION_BAR_HEIGHT);
     const int contentTop = actionBarHeight +
-                           scaleForWindow(mWindow, CONTENT_TOP_PADDING);
+                           scaleForWindow(GetHwnd(), CONTENT_TOP_PADDING);
     const int contentBottom = std::max(
         contentTop,
-        height - scaleForWindow(mWindow, CONTENT_BOTTOM_PADDING));
-    const int splitterHeight = scaleForWindow(mWindow, SPLITTER_HEIGHT);
-    const int availableHeight =
-        std::max(0, contentBottom - contentTop - splitterHeight);
+        height - scaleForWindow(GetHwnd(), CONTENT_BOTTOM_PADDING));
+    const int splitterHeight = scaleForWindow(GetHwnd(), SPLITTER_HEIGHT);
+    const int availableHeight = std::max(
+        0,
+        contentBottom - contentTop - splitterHeight);
 
-    int topHeight = MulDiv(availableHeight, mSplitterPercent, 100);
-    const int minimumListHeight = scaleForWindow(mWindow, MINIMUM_LIST_HEIGHT);
+    const int minimumListHeight = scaleForWindow(
+        GetHwnd(), MINIMUM_LIST_HEIGHT);
     const int minimumBottomHeight = scaleForWindow(
-        mWindow, OPTIONS_BAR_HEIGHT + LOG_LABEL_HEIGHT + 60);
-    const int maximumTopHeight =
-        std::max(0, availableHeight - minimumBottomHeight);
-    const int minimumTopHeight = std::min(minimumListHeight, maximumTopHeight);
-    topHeight = std::clamp(topHeight, minimumTopHeight, maximumTopHeight);
+        GetHwnd(), OPTIONS_BAR_HEIGHT + LOG_LABEL_HEIGHT + 60);
+    const int maximumTopHeight = std::max(
+        0,
+        availableHeight - minimumBottomHeight);
+    const int minimumTopHeight = std::min(minimumListHeight,
+                                          maximumTopHeight);
+    const int topHeight = std::clamp(
+        MulDiv(availableHeight, mSplitterPercent, 100),
+        minimumTopHeight,
+        maximumTopHeight);
     const int splitterY = contentTop + topHeight;
     const int bottomY = splitterY + splitterHeight;
     const int contentWidth = std::max(0, width - 2 * margin);
+    const UINT positionFlags = SWP_NOZORDER | SWP_NOACTIVATE;
 
-    ::SetWindowPos(mActionBar,
-                 nullptr,
-                 0,
-                 0,
-                 width,
-                 actionBarHeight,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    ::SetWindowPos(mOptionsBar,
-                 nullptr,
-                 margin,
-                 bottomY,
-                 contentWidth,
-                 scaleForWindow(mWindow, OPTIONS_BAR_HEIGHT),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    ::SetWindowPos(mListView,
-                 nullptr,
-                 margin,
-                 contentTop,
-                 contentWidth,
-                 std::max(0, topHeight),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    ::SetWindowPos(mSplitter,
-                 nullptr,
-                 margin,
-                 splitterY,
-                 contentWidth,
-                 splitterHeight,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
+    const auto position = [positionFlags](const Win32xx::CWnd& control,
+                                          int x,
+                                          int y,
+                                          int controlWidth,
+                                          int controlHeight) {
+        if (control.IsWindow()) {
+            control.SetWindowPos(nullptr,
+                                 x,
+                                 y,
+                                 controlWidth,
+                                 controlHeight,
+                                 positionFlags);
+        }
+    };
 
-    const int actionY = scaleForWindow(mWindow, 6);
+    position(mActionBar, 0, 0, width, actionBarHeight);
+    position(mOptionsBar,
+             margin,
+             bottomY,
+             contentWidth,
+             scaleForWindow(GetHwnd(), OPTIONS_BAR_HEIGHT));
+    position(mListView, margin, contentTop, contentWidth, topHeight);
+    position(mSplitter,
+             margin,
+             splitterY,
+             contentWidth,
+             splitterHeight);
+
     int actionX = margin;
     for (std::size_t index = 0; index < mActionButtons.size(); ++index) {
-        const int buttonWidth =
-            scaleForWindow(mWindow, ACTION_BUTTON_WIDTHS[index]);
-        ::SetWindowPos(mActionButtons[index],
-                     nullptr,
-                     actionX,
-                     actionY,
-                     buttonWidth,
-                     scaleForWindow(mWindow, ACTION_BAR_BUTTON_HEIGHT),
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        const int buttonWidth = scaleForWindow(
+            GetHwnd(), ACTION_BUTTON_WIDTHS[index]);
+        position(mActionButtons[index],
+                 actionX,
+                 scaleForWindow(GetHwnd(), 6),
+                 buttonWidth,
+                 scaleForWindow(GetHwnd(), ACTION_BAR_BUTTON_HEIGHT));
         actionX += buttonWidth;
     }
 
-    const int optionsY = bottomY + scaleForWindow(mWindow, 1);
-    int optionX = margin + scaleForWindow(mWindow, 2);
-    const int optionGap = scaleForWindow(mWindow, 2);
-    const std::array<std::pair<HWND, int>, 3> radios{
-        std::pair{mCombinedRadio, 78},
-        std::pair{mStdoutRadio, 72},
-        std::pair{mStderrRadio, 110},
+    const int optionsY = bottomY + scaleForWindow(GetHwnd(), 1);
+    int optionX = margin + scaleForWindow(GetHwnd(), 2);
+    const int optionGap = scaleForWindow(GetHwnd(), 2);
+    const std::array<std::pair<Win32xx::CWnd*, int>, 3> radios{
+        std::pair{static_cast<Win32xx::CWnd*>(&mCombinedRadio), 78},
+        std::pair{static_cast<Win32xx::CWnd*>(&mStdoutRadio), 72},
+        std::pair{static_cast<Win32xx::CWnd*>(&mStderrRadio), 110},
     };
-    for (const auto& [control, logicalWidth] : radios) {
-        const int controlWidth = scaleForWindow(mWindow, logicalWidth);
-        ::SetWindowPos(control,
-                     nullptr,
-                     optionX,
-                     optionsY,
-                     controlWidth,
-                     scaleForWindow(mWindow, 26),
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+    for (const auto [control, logicalWidth] : radios) {
+        const int controlWidth = scaleForWindow(GetHwnd(), logicalWidth);
+        position(*control,
+                 optionX,
+                 optionsY,
+                 controlWidth,
+                 scaleForWindow(GetHwnd(), 26));
         optionX += controlWidth + optionGap;
     }
 
-    const int rightGap = scaleForWindow(mWindow, 4);
+    const int rightGap = scaleForWindow(GetHwnd(), 4);
     int rightX = width - margin;
-    const std::array<std::pair<HWND, int>, 4> rightControls{
-        std::pair{mAutoScrollCheck, 88},
-        std::pair{mWrapLinesCheck, 82},
-        std::pair{mJumpLatestButton, 108},
-        std::pair{mClearButton, 60},
+    const std::array<std::pair<Win32xx::CWnd*, int>, 4> rightControls{
+        std::pair{static_cast<Win32xx::CWnd*>(&mAutoScrollCheck), 88},
+        std::pair{static_cast<Win32xx::CWnd*>(&mWrapLinesCheck), 82},
+        std::pair{static_cast<Win32xx::CWnd*>(&mJumpLatestButton), 108},
+        std::pair{static_cast<Win32xx::CWnd*>(&mClearButton), 60},
     };
-    for (const auto& [control, logicalWidth] : rightControls) {
-        const int controlWidth = scaleForWindow(mWindow, logicalWidth);
+    for (const auto [control, logicalWidth] : rightControls) {
+        const int controlWidth = scaleForWindow(GetHwnd(), logicalWidth);
         rightX -= controlWidth;
-        ::SetWindowPos(control,
-                     nullptr,
-                     rightX,
-                     optionsY,
-                     controlWidth,
-                     scaleForWindow(mWindow, 26),
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        position(*control,
+                 rightX,
+                 optionsY,
+                 controlWidth,
+                 scaleForWindow(GetHwnd(), 26));
         rightX -= rightGap;
     }
 
-    const int labelY = bottomY + scaleForWindow(mWindow, OPTIONS_BAR_HEIGHT);
-    ::SetWindowPos(mLogLabel,
-                 nullptr,
-                 margin,
-                 labelY,
-                 contentWidth,
-                 scaleForWindow(mWindow, LOG_LABEL_HEIGHT),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    const int logY = labelY + scaleForWindow(mWindow, LOG_LABEL_HEIGHT);
-    ::SetWindowPos(mLogEdit,
-                 nullptr,
-                 margin,
-                 logY,
-                 contentWidth,
-                 std::max(0, height - logY - margin),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
+    const int labelY = bottomY + scaleForWindow(GetHwnd(), OPTIONS_BAR_HEIGHT);
+    position(mLogLabel,
+             margin,
+             labelY,
+             contentWidth,
+             scaleForWindow(GetHwnd(), LOG_LABEL_HEIGHT));
+    const int logY = labelY + scaleForWindow(GetHwnd(), LOG_LABEL_HEIGHT);
+    position(mLogEdit,
+             margin,
+             logY,
+             contentWidth,
+             std::max(0, height - logY - margin));
 
     updateListColumns();
-
-    // WS_CLIPCHILDREN keeps the parent from painting over its controls, but
-    // it also means a resize can leave moved child windows outside the
-    // invalidated region. Invalidate the complete tree so every control gets
-    // a paint pass after its new position is applied.
-    ::RedrawWindow(mWindow,
-                 nullptr,
-                 nullptr,
-                 RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    RedrawWindow(RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 void MainWindow::updateListColumns() {
-    if (mListView == nullptr) {
+    if (!mListView.IsWindow()) {
         return;
     }
-    RECT client{};
-    ::GetClientRect(mListView, &client);
-    const int availableWidth = std::max(0L, client.right - client.left);
+    const int availableWidth = std::max(0, mListView.GetClientRect().Width());
     int fixedWidth = 0;
     for (std::size_t index = 0; index < FIXED_COLUMN_WIDTHS.size(); ++index) {
-        const int width = scaleForWindow(mWindow, FIXED_COLUMN_WIDTHS[index]);
-        ListView_SetColumnWidth(mListView, static_cast<int>(index), width);
+        const int width = scaleForWindow(GetHwnd(), FIXED_COLUMN_WIDTHS[index]);
+        mListView.SetColumnWidth(static_cast<int>(index), width);
         fixedWidth += width;
     }
     const int workingDirectoryWidth = std::max(
-        scaleForWindow(mWindow, MINIMUM_WORKING_DIRECTORY_WIDTH),
+        scaleForWindow(GetHwnd(), MINIMUM_WORKING_DIRECTORY_WIDTH),
         availableWidth - fixedWidth);
-    ListView_SetColumnWidth(mListView,
-                            static_cast<int>(FIXED_COLUMN_WIDTHS.size()),
-                            workingDirectoryWidth);
+    mListView.SetColumnWidth(static_cast<int>(FIXED_COLUMN_WIDTHS.size()),
+                             workingDirectoryWidth);
 }
 
 void MainWindow::updateLogFont() {
-    if (mLogEdit == nullptr) {
+    if (!mLogEdit.IsWindow()) {
         return;
     }
-    const int fontHeight = -MulDiv(10, static_cast<int>(mCurrentDpi), 72);
-    const HFONT newFont = CreateFontW(fontHeight,
-                                      0,
-                                      0,
-                                      0,
-                                      FW_NORMAL,
-                                      FALSE,
-                                      FALSE,
-                                      FALSE,
-                                      DEFAULT_CHARSET,
-                                      OUT_DEFAULT_PRECIS,
-                                      CLIP_DEFAULT_PRECIS,
-                                      CLEARTYPE_QUALITY,
-                                      FIXED_PITCH | FF_MODERN,
-                                      L"Consolas");
-    if (newFont == nullptr) {
-        return;
-    }
-    const HFONT oldFont = mLogFont;
+    Win32xx::CFont newFont;
+    createFont(newFont, GetHwnd(), 10, FIXED_PITCH | FF_MODERN, L"Consolas");
+    mLogEdit.SetFont(static_cast<HFONT>(newFont), TRUE);
     mLogFont = newFont;
-    ::SendMessageW(mLogEdit,
-                 WM_SETFONT,
-                 reinterpret_cast<WPARAM>(mLogFont),
-                 TRUE);
-    if (oldFont != nullptr) {
-        DeleteObject(oldFont);
-    }
 }
 
 void MainWindow::updateControlFonts() {
-    if (mWindow == nullptr) {
+    if (!IsWindow()) {
         return;
     }
-    const int fontHeight = -MulDiv(9,
-                                   static_cast<int>(mCurrentDpi),
-                                   72);
-    const HFONT newFont = CreateFontW(fontHeight,
-                                      0,
-                                      0,
-                                      0,
-                                      FW_NORMAL,
-                                      FALSE,
-                                      FALSE,
-                                      FALSE,
-                                      DEFAULT_CHARSET,
-                                      OUT_DEFAULT_PRECIS,
-                                      CLIP_DEFAULT_PRECIS,
-                                      CLEARTYPE_QUALITY,
-                                      VARIABLE_PITCH | FF_SWISS,
-                                      L"Segoe UI");
-    if (newFont == nullptr) {
-        return;
+    Win32xx::CFont newFont;
+    createFont(newFont,
+               GetHwnd(),
+               9,
+               VARIABLE_PITCH | FF_SWISS,
+               L"Segoe UI");
+    const HFONT font = static_cast<HFONT>(newFont);
+    mActionBar.SetFont(font, TRUE);
+    mOptionsBar.SetFont(font, TRUE);
+    mListView.SetFont(font, TRUE);
+    mLogLabel.SetFont(font, TRUE);
+    for (auto& button : mActionButtons) {
+        button.SetFont(font, TRUE);
     }
-
-    const HFONT oldFont = mUiFont;
+    mCombinedRadio.SetFont(font, TRUE);
+    mStdoutRadio.SetFont(font, TRUE);
+    mStderrRadio.SetFont(font, TRUE);
+    mClearButton.SetFont(font, TRUE);
+    mJumpLatestButton.SetFont(font, TRUE);
+    mWrapLinesCheck.SetFont(font, TRUE);
+    mAutoScrollCheck.SetFont(font, TRUE);
     mUiFont = newFont;
-    const auto setFont = [this](HWND control) {
-        if (control != nullptr) {
-            ::SendMessageW(control,
-                         WM_SETFONT,
-                         reinterpret_cast<WPARAM>(mUiFont),
-                         TRUE);
-        }
-    };
-    setFont(mListView);
-    setFont(mLogLabel);
-    for (const HWND control : mActionButtons) {
-        setFont(control);
-    }
-    setFont(mCombinedRadio);
-    setFont(mStdoutRadio);
-    setFont(mStderrRadio);
-    setFont(mClearButton);
-    setFont(mJumpLatestButton);
-    setFont(mWrapLinesCheck);
-    setFont(mAutoScrollCheck);
-    if (oldFont != nullptr) {
-        DeleteObject(oldFont);
-    }
 }
 
 void MainWindow::updateLogOptions() {
-    if (mCombinedRadio == nullptr) {
+    if (!mCombinedRadio.IsWindow()) {
         return;
     }
-    ::SendMessageW(mCombinedRadio,
-                 BM_SETCHECK,
-                 mLogView == LogView::COMBINED ? BST_CHECKED : BST_UNCHECKED,
-                 0);
-    ::SendMessageW(mStdoutRadio,
-                 BM_SETCHECK,
-                 mLogView == LogView::STDOUT ? BST_CHECKED : BST_UNCHECKED,
-                 0);
-    ::SendMessageW(mStderrRadio,
-                 BM_SETCHECK,
-                 mLogView == LogView::STDERR ? BST_CHECKED : BST_UNCHECKED,
-                 0);
-    ::SendMessageW(mWrapLinesCheck,
-                 BM_SETCHECK,
-                 mConfiguration.mPreferences.mWrapLines ? BST_CHECKED
-                                                         : BST_UNCHECKED,
-                 0);
-    ::SendMessageW(mAutoScrollCheck,
-                 BM_SETCHECK,
-                 mConfiguration.mPreferences.mAutoScroll ? BST_CHECKED
-                                                          : BST_UNCHECKED,
-                 0);
-    ::SendMessageW(mLogEdit,
-                 EM_SETTARGETDEVICE,
-                 0,
-                 mConfiguration.mPreferences.mWrapLines ? 0 : 1);
+    mCombinedRadio.SetCheck(mLogView == LogView::COMBINED ? BST_CHECKED
+                                                          : BST_UNCHECKED);
+    mStdoutRadio.SetCheck(mLogView == LogView::STDOUT ? BST_CHECKED
+                                                       : BST_UNCHECKED);
+    mStderrRadio.SetCheck(mLogView == LogView::STDERR ? BST_CHECKED
+                                                       : BST_UNCHECKED);
+    mWrapLinesCheck.SetCheck(mConfiguration.mPreferences.mWrapLines
+                                 ? BST_CHECKED
+                                 : BST_UNCHECKED);
+    mAutoScrollCheck.SetCheck(mConfiguration.mPreferences.mAutoScroll
+                                  ? BST_CHECKED
+                                  : BST_UNCHECKED);
+    mLogEdit.SetTargetDevice(nullptr,
+                             mConfiguration.mPreferences.mWrapLines ? 0 : 1);
 }
 
 void MainWindow::updateActionAvailability() {
-    if (mActionButtons[0] == nullptr) {
+    if (!mActionButtons.front().IsWindow()) {
         return;
     }
     std::vector<State> states;
@@ -1147,9 +779,11 @@ void MainWindow::updateActionAvailability() {
                                std::ranges::all_of(states, isInactive);
     const bool startEnabled = std::ranges::any_of(states, isInactive);
     const bool stopEnabled = std::ranges::any_of(
-        states, [](State state) { return state == State::RUNNING; });
+        states,
+        [](State state) { return state == State::RUNNING; });
     const bool restartEnabled = std::ranges::any_of(
-        states, [](State state) {
+        states,
+        [](State state) {
             return isInactive(state) || state == State::RUNNING;
         });
     const std::array<bool, ACTION_BUTTON_COUNT> enabled{
@@ -1161,25 +795,25 @@ void MainWindow::updateActionAvailability() {
         restartEnabled,
     };
     for (std::size_t index = 0; index < enabled.size(); ++index) {
-        ::EnableWindow(mActionButtons[index], enabled[index] ? TRUE : FALSE);
+        mActionButtons[index].EnableWindow(enabled[index] ? TRUE : FALSE);
     }
-    ::EnableWindow(mClearButton,
-                 mActiveCommandId.empty() ? FALSE : TRUE);
+    mClearButton.EnableWindow(mActiveCommandId.empty() ? FALSE : TRUE);
 }
 
 void MainWindow::refreshRows() {
-    if (mListView == nullptr) {
+    if (!mListView.IsWindow()) {
         return;
     }
+
     std::vector<std::wstring> selectedIds;
-    for (int item = ListView_GetNextItem(mListView, -1, LVNI_SELECTED);
+    for (int item = mListView.GetNextItem(-1, LVNI_SELECTED);
          item >= 0;
-         item = ListView_GetNextItem(mListView, item, LVNI_SELECTED)) {
+         item = mListView.GetNextItem(item, LVNI_SELECTED)) {
         if (item < static_cast<int>(mConfiguration.mCommands.size())) {
             selectedIds.push_back(mConfiguration.mCommands[item].mId);
         }
     }
-    const int focusedIndex = focusedItem();
+    const int focusedIndex = mListView.focusedItem();
     const std::wstring focusedId =
         focusedIndex >= 0 &&
                 focusedIndex < static_cast<int>(mConfiguration.mCommands.size())
@@ -1187,48 +821,42 @@ void MainWindow::refreshRows() {
             : std::wstring{};
 
     mUpdatingList = true;
-    ListView_DeleteAllItems(mListView);
+    mListView.DeleteAllItems();
     for (std::size_t index = 0; index < mConfiguration.mCommands.size(); ++index) {
         const CommandConfig& command = mConfiguration.mCommands[index];
         const RuntimeSnapshot runtime = mProcessManager.snapshot(command.mId);
-        std::array<std::wstring, 6> values{
+        const std::array<std::wstring, 6> values{
             command.mName,
-            stateToString(runtime.mState),
+            stateText(runtime),
             numberOrEmpty(runtime.mPid),
             exitCodeOrEmpty(runtime.mExitCode),
             command.mAutoStart ? L"Yes" : L"No",
             command.mWorkingDirectory,
         };
-        LVITEMW item{};
-        item.mask = LVIF_TEXT;
-        item.iItem = static_cast<int>(index);
-        item.pszText = values[0].data();
-        const int inserted = ListView_InsertItem(mListView, &item);
+        const int inserted = mListView.InsertItem(static_cast<int>(index),
+                                                  values.front().c_str());
         if (inserted < 0) {
             continue;
         }
         for (std::size_t column = 1; column < values.size(); ++column) {
-            ListView_SetItemText(mListView,
-                                 inserted,
-                                 static_cast<int>(column),
-                                 values[column].data());
+            mListView.SetItemText(inserted,
+                                  static_cast<int>(column),
+                                  values[column].c_str());
         }
     }
 
     for (std::size_t index = 0; index < mConfiguration.mCommands.size(); ++index) {
         const std::wstring& commandId = mConfiguration.mCommands[index].mId;
         if (std::ranges::find(selectedIds, commandId) != selectedIds.end()) {
-            ListView_SetItemState(mListView,
-                                  static_cast<int>(index),
-                                  LVIS_SELECTED,
-                                  LVIS_SELECTED);
+            mListView.SetItemState(static_cast<int>(index),
+                                   LVIS_SELECTED,
+                                   LVIS_SELECTED);
         }
         if (commandId == focusedId) {
-            ListView_SetItemState(mListView,
-                                  static_cast<int>(index),
-                                  LVIS_FOCUSED,
-                                  LVIS_FOCUSED);
-            mSelectionAnchorIndex = static_cast<int>(index);
+            mListView.SetItemState(static_cast<int>(index),
+                                   LVIS_FOCUSED,
+                                   LVIS_FOCUSED);
+            mListView.setSelectionAnchor(static_cast<int>(index));
         }
     }
     mUpdatingList = false;
@@ -1236,12 +864,11 @@ void MainWindow::refreshRows() {
 }
 
 void MainWindow::refreshLogs() {
-    if (mLogEdit == nullptr) {
+    if (!mLogEdit.IsWindow()) {
         return;
     }
     const bool wasAtBottom = logIsAtBottom();
-    const int firstVisibleLine = static_cast<int>(::SendMessageW(
-        mLogEdit, EM_GETFIRSTVISIBLELINE, 0, 0));
+    const int firstVisibleLine = mLogEdit.GetFirstVisibleLine();
 
     RuntimeSnapshot runtime{};
     if (!mActiveCommandId.empty()) {
@@ -1255,45 +882,33 @@ void MainWindow::refreshLogs() {
     }
 
     std::wstring text;
-    std::vector<std::pair<std::size_t, std::size_t>> stderrRanges;
+    std::vector<std::pair<long, long>> stderrRanges;
     for (const LogLine& line : *lines) {
         const std::size_t start = text.size();
         text += formatLogLine(line);
         if (line.mStream == "stderr") {
-            stderrRanges.emplace_back(start, text.size());
+            stderrRanges.emplace_back(static_cast<long>(start),
+                                      static_cast<long>(text.size()));
         }
     }
 
-    ::SetWindowTextW(mLogEdit, text.c_str());
+    mLogEdit.SetWindowText(text.c_str());
     CHARFORMAT2W stderrFormat{};
     stderrFormat.cbSize = sizeof(CHARFORMAT2W);
     stderrFormat.dwMask = CFM_COLOR;
     stderrFormat.crTextColor = STDERR_COLOR;
-    for (const auto& [start, end] : stderrRanges) {
-        ::SendMessageW(mLogEdit,
-                     EM_SETSEL,
-                     static_cast<WPARAM>(start),
-                     static_cast<LPARAM>(end));
-        ::SendMessageW(mLogEdit,
-                     EM_SETCHARFORMAT,
-                     SCF_SELECTION,
-                     reinterpret_cast<LPARAM>(&stderrFormat));
+    for (const auto [start, end] : stderrRanges) {
+        mLogEdit.SetSel(start, end);
+        mLogEdit.SetSelectionCharFormat(stderrFormat);
     }
-    ::SendMessageW(mLogEdit, EM_HIDESELECTION, TRUE, 0);
+    mLogEdit.HideSelection(TRUE, FALSE);
 
     if (mConfiguration.mPreferences.mAutoScroll && wasAtBottom) {
-        ::SendMessageW(mLogEdit,
-                     EM_SETSEL,
-                     static_cast<WPARAM>(-1),
-                     static_cast<LPARAM>(-1));
-        ::SendMessageW(mLogEdit, EM_SCROLLCARET, 0, 0);
+        mLogEdit.SetSel(-1, -1);
+        scrollRichEditCaret(mLogEdit);
     } else {
-        const int currentFirstVisibleLine = static_cast<int>(::SendMessageW(
-            mLogEdit, EM_GETFIRSTVISIBLELINE, 0, 0));
-        ::SendMessageW(mLogEdit,
-                     EM_LINESCROLL,
-                     0,
-                     firstVisibleLine - currentFirstVisibleLine);
+        const int currentFirstVisibleLine = mLogEdit.GetFirstVisibleLine();
+        mLogEdit.LineScroll(firstVisibleLine - currentFirstVisibleLine);
     }
 }
 
@@ -1321,33 +936,33 @@ void MainWindow::pollProcessEvents() {
 void MainWindow::savePreferences() {
     const auto result = mStore.save(mConfiguration);
     if (!result) {
-        ::MessageBoxW(mWindow,
-                       result.error().c_str(),
-                       L"Save Failed",
-                       MB_OK | MB_ICONERROR);
+        MessageBox(result.error().c_str(),
+                   L"Save Failed",
+                   MB_OK | MB_ICONERROR);
     }
 }
 
 void MainWindow::setSplitterFromClientY(int clientY) {
-    RECT client{};
-    ::GetClientRect(mWindow, &client);
-    const int actionBarHeight = scaleForWindow(mWindow, ACTION_BAR_HEIGHT);
+    const Win32xx::CRect client = GetClientRect();
+    const int actionBarHeight = scaleForWindow(GetHwnd(), ACTION_BAR_HEIGHT);
     const int contentTop = actionBarHeight +
-                           scaleForWindow(mWindow, CONTENT_TOP_PADDING);
+                           scaleForWindow(GetHwnd(), CONTENT_TOP_PADDING);
     const int contentBottom = client.bottom -
-                              scaleForWindow(mWindow, CONTENT_BOTTOM_PADDING);
-    const int splitterHeight = scaleForWindow(mWindow, SPLITTER_HEIGHT);
-    const int availableHeight =
-        std::max(0, contentBottom - contentTop - splitterHeight);
+                              scaleForWindow(GetHwnd(), CONTENT_BOTTOM_PADDING);
+    const int splitterHeight = scaleForWindow(GetHwnd(), SPLITTER_HEIGHT);
+    const int availableHeight = std::max(
+        0,
+        contentBottom - contentTop - splitterHeight);
     if (availableHeight == 0) {
         return;
     }
     const int topHeight = std::clamp(clientY - contentTop,
                                      0,
                                      availableHeight);
-    mSplitterPercent = std::clamp(MulDiv(topHeight, 100, availableHeight),
-                                  10,
-                                  90);
+    mSplitterPercent = std::clamp(
+        MulDiv(topHeight, 100, availableHeight),
+        10,
+        90);
     layoutControls();
 }
 
@@ -1397,15 +1012,12 @@ bool MainWindow::saveConfiguration() {
     if (result) {
         return true;
     }
-    ::MessageBoxW(mWindow,
-                  result.error().c_str(),
-                  L"Save Failed",
-                  MB_OK | MB_ICONERROR);
+    MessageBox(result.error().c_str(), L"Save Failed", MB_OK | MB_ICONERROR);
     return false;
 }
 
 void MainWindow::addCommand() {
-    const auto command = CommandDialog::show(mWindow, mInstance);
+    const auto command = CommandDialog::show(GetHwnd(), mInstance);
     if (!command) {
         return;
     }
@@ -1426,26 +1038,23 @@ void MainWindow::addCommand() {
         const int index = static_cast<int>(
             std::distance(mConfiguration.mCommands.begin(), found));
         mUpdatingList = true;
-        ListView_SetItemState(mListView,
-                              -1,
-                              0,
-                              LVIS_SELECTED | LVIS_FOCUSED);
-        ListView_SetItemState(mListView,
-                              index,
-                              LVIS_SELECTED | LVIS_FOCUSED,
-                              LVIS_SELECTED | LVIS_FOCUSED);
+        mListView.SetItemState(-1,
+                               0,
+                               LVIS_SELECTED | LVIS_FOCUSED);
+        mListView.SetItemState(index,
+                               LVIS_SELECTED | LVIS_FOCUSED,
+                               LVIS_SELECTED | LVIS_FOCUSED);
         mUpdatingList = false;
-        mSelectionAnchorIndex = index;
+        mListView.setSelectionAnchor(index);
         syncSelection();
     }
 }
 
 void MainWindow::editSelectedCommand() {
     if (mSelectedCommandIds.size() != 1) {
-        ::MessageBoxW(mWindow,
-                      L"Please select one command.",
-                      L"Edit Command",
-                      MB_OK | MB_ICONINFORMATION);
+        MessageBox(L"Please select one command.",
+                   L"Edit Command",
+                   MB_OK | MB_ICONINFORMATION);
         return;
     }
     const auto found = std::ranges::find_if(
@@ -1457,15 +1066,14 @@ void MainWindow::editSelectedCommand() {
         return;
     }
     if (!isEditable(*found)) {
-        ::MessageBoxW(mWindow,
-                      L"Stop this command before editing it.",
-                      L"Cannot Edit",
-                      MB_OK | MB_ICONWARNING);
+        MessageBox(L"Stop this command before editing it.",
+                   L"Cannot Edit",
+                   MB_OK | MB_ICONWARNING);
         return;
     }
 
     const CommandConfig original = *found;
-    const auto edited = CommandDialog::show(mWindow, mInstance, &original);
+    const auto edited = CommandDialog::show(GetHwnd(), mInstance, &original);
     if (!edited) {
         return;
     }
@@ -1487,20 +1095,18 @@ void MainWindow::deleteSelectedCommands() {
             return isInactive(mProcessManager.snapshot(commandId).mState);
         });
     if (!canDelete) {
-        ::MessageBoxW(mWindow,
-                      L"Stop the selected running commands before deleting them.",
-                      L"Cannot Delete",
-                      MB_OK | MB_ICONWARNING);
+        MessageBox(L"Stop the selected running commands before deleting them.",
+                   L"Cannot Delete",
+                   MB_OK | MB_ICONWARNING);
         return;
     }
 
     const std::wstring question =
         L"Are you sure you want to delete " +
         std::to_wstring(mSelectedCommandIds.size()) + L" command(s)?";
-    if (::MessageBoxW(mWindow,
-                      question.c_str(),
-                      L"Delete Commands",
-                      MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) {
+    if (MessageBox(question.c_str(),
+                   L"Delete Commands",
+                   MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) {
         return;
     }
 
@@ -1519,15 +1125,13 @@ void MainWindow::deleteSelectedCommands() {
     }
     mSelectedCommandIds.clear();
     mActiveCommandId.clear();
-    mSelectionAnchorIndex = -1;
     refreshRows();
     refreshLogs();
 }
 
 void MainWindow::showStopping() {
-    if (mWindow != nullptr) {
-        ::SetWindowTextW(mWindow,
-                         L"Command Runner - Stopping all commands...");
+    if (IsWindow()) {
+        SetWindowText(L"Command Runner - Stopping all commands...");
     }
 }
 
@@ -1546,9 +1150,9 @@ void MainWindow::invokeEditIfAvailable() {
 
 void MainWindow::syncSelection() {
     mSelectedCommandIds.clear();
-    for (int item = ListView_GetNextItem(mListView, -1, LVNI_SELECTED);
+    for (int item = mListView.GetNextItem(-1, LVNI_SELECTED);
          item >= 0;
-         item = ListView_GetNextItem(mListView, item, LVNI_SELECTED)) {
+         item = mListView.GetNextItem(item, LVNI_SELECTED)) {
         if (item < static_cast<int>(mConfiguration.mCommands.size())) {
             mSelectedCommandIds.push_back(mConfiguration.mCommands[item].mId);
         }
@@ -1563,102 +1167,12 @@ void MainWindow::syncSelection() {
     updateActionAvailability();
 }
 
-void MainWindow::selectRange(int anchorIndex, int targetIndex) {
-    const int count = ListView_GetItemCount(mListView);
-    if (count == 0) {
-        return;
-    }
-    const int currentIndex = focusedItem();
-    if (anchorIndex < 0 || anchorIndex >= count) {
-        anchorIndex = currentIndex >= 0 ? currentIndex : 0;
-    }
-    if (targetIndex < 0 || targetIndex >= count) {
-        targetIndex = std::clamp(targetIndex, 0, count - 1);
-    }
-    mUpdatingList = true;
-    ListView_SetItemState(mListView, -1, 0, LVIS_SELECTED);
-    const int first = std::min(anchorIndex, targetIndex);
-    const int last = std::max(anchorIndex, targetIndex);
-    for (int index = first; index <= last; ++index) {
-        ListView_SetItemState(mListView,
-                              index,
-                              LVIS_SELECTED,
-                              LVIS_SELECTED);
-    }
-    ListView_SetItemState(mListView,
-                          targetIndex,
-                          LVIS_FOCUSED,
-                          LVIS_FOCUSED);
-    mUpdatingList = false;
-    ListView_EnsureVisible(mListView, targetIndex, FALSE);
-    syncSelection();
-}
-
-void MainWindow::moveFocus(int direction) {
-    const int count = ListView_GetItemCount(mListView);
-    if (count == 0) {
-        return;
-    }
-    const int current = focusedItem();
-    const int start = current >= 0 ? current : 0;
-    const int target = std::clamp(start + direction, 0, count - 1);
-    ListView_SetItemState(mListView, target, LVIS_FOCUSED, LVIS_FOCUSED);
-    ListView_EnsureVisible(mListView, target, FALSE);
-}
-
-void MainWindow::moveToBoundary(bool last, bool select) {
-    const int count = ListView_GetItemCount(mListView);
-    if (count == 0) {
-        return;
-    }
-    const int target = last ? count - 1 : 0;
-    mUpdatingList = true;
-    if (select) {
-        ListView_SetItemState(mListView, -1, 0, LVIS_SELECTED);
-        ListView_SetItemState(mListView,
-                              target,
-                              LVIS_SELECTED,
-                              LVIS_SELECTED);
-    }
-    ListView_SetItemState(mListView,
-                          target,
-                          LVIS_FOCUSED,
-                          LVIS_FOCUSED);
-    mUpdatingList = false;
-    mSelectionAnchorIndex = target;
-    ListView_EnsureVisible(mListView, target, FALSE);
-    syncSelection();
-}
-
-void MainWindow::toggleFocusedSelection() {
-    const int item = focusedItem();
-    if (item < 0) {
-        return;
-    }
-    const UINT state = ListView_GetItemState(mListView, item, LVIS_SELECTED);
-    const UINT newState =
-        (state == LVIS_SELECTED ? 0U : LVIS_SELECTED) | LVIS_FOCUSED;
-    ListView_SetItemState(mListView,
-                          item,
-                          newState,
-                          LVIS_SELECTED | LVIS_FOCUSED);
-    mSelectionAnchorIndex = item;
-    ListView_EnsureVisible(mListView, item, FALSE);
-    syncSelection();
-}
-
-int MainWindow::focusedItem() const {
-    if (mListView == nullptr) {
-        return -1;
-    }
-    return ListView_GetNextItem(mListView, -1, LVNI_FOCUSED);
-}
-
 bool MainWindow::isEditable(const CommandConfig& command) const {
     return isInactive(mProcessManager.snapshot(command.mId).mState);
 }
 
-const CommandConfig* MainWindow::commandById(std::wstring_view commandId) const {
+const CommandConfig* MainWindow::commandById(
+    std::wstring_view commandId) const {
     const auto found = std::ranges::find_if(
         mConfiguration.mCommands,
         [commandId](const CommandConfig& command) {
@@ -1673,13 +1187,13 @@ bool MainWindow::isInactive(State state) {
 }
 
 bool MainWindow::logIsAtBottom() const {
-    if (mLogEdit == nullptr) {
+    if (!mLogEdit.IsWindow()) {
         return true;
     }
     SCROLLINFO scrollInfo{};
     scrollInfo.cbSize = sizeof(SCROLLINFO);
     scrollInfo.fMask = SIF_ALL;
-    if (::GetScrollInfo(mLogEdit, SB_VERT, &scrollInfo) == FALSE) {
+    if (mLogEdit.GetScrollInfo(SB_VERT, scrollInfo) == FALSE) {
         return true;
     }
     const int maximum = static_cast<int>(scrollInfo.nMax);
@@ -1707,21 +1221,190 @@ std::wstring MainWindow::formatTimestamp(double timestamp) {
     return output.str();
 }
 
-int MainWindow::scaleForDpi(UINT dpi, int value) {
-    const UINT effectiveDpi = dpi == 0 ? DEFAULT_DPI : dpi;
-    return MulDiv(value, static_cast<int>(effectiveDpi), DEFAULT_DPI);
-}
-
-DWORD MainWindow::lastErrorOr(DWORD fallback) {
-    const DWORD error = ::GetLastError();
-    return error == ERROR_SUCCESS ? fallback : error;
-}
-
-int MainWindow::scaleForWindow(HWND window, int value) {
-    if (window == nullptr) {
-        return scaleForDpi(GetDpiForSystem(), value);
+void MainWindow::onListSelectionChanged() {
+    if (!mUpdatingList) {
+        syncSelection();
     }
-    return scaleForDpi(GetDpiForWindow(window), value);
+}
+
+void MainWindow::onListActivated() {
+    invokeEditIfAvailable();
+}
+
+void MainWindow::onListDeleteRequested() {
+    deleteSelectedCommands();
+}
+
+void MainWindow::onSplitterMoved(Win32xx::CPoint screenPoint) {
+    if (!IsWindow()) {
+        return;
+    }
+    if (ScreenToClient(screenPoint) != FALSE) {
+        setSplitterFromClientY(screenPoint.y);
+    }
+}
+
+BOOL MainWindow::OnCommand(WPARAM wParam, LPARAM lParam) {
+    (void)lParam;
+    const int controlId = LOWORD(wParam);
+    const int notificationCode = HIWORD(wParam);
+    if (controlId == IDC_LOG_LABEL && notificationCode == STN_CLICKED) {
+        mLogEdit.SetFocus();
+        return TRUE;
+    }
+    if (notificationCode != BN_CLICKED) {
+        return FALSE;
+    }
+
+    switch (controlId) {
+    case IDC_ADD:
+        addCommand();
+        return TRUE;
+    case IDC_EDIT:
+        editSelectedCommand();
+        return TRUE;
+    case IDC_DELETE:
+        deleteSelectedCommands();
+        return TRUE;
+    case IDC_START:
+        startSelected();
+        return TRUE;
+    case IDC_STOP:
+        stopSelected();
+        return TRUE;
+    case IDC_RESTART:
+        restartSelected();
+        return TRUE;
+    case IDC_LOG_COMBINED:
+        mLogView = LogView::COMBINED;
+        updateLogOptions();
+        refreshLogs();
+        return TRUE;
+    case IDC_LOG_STDOUT:
+        mLogView = LogView::STDOUT;
+        updateLogOptions();
+        refreshLogs();
+        return TRUE;
+    case IDC_LOG_STDERR:
+        mLogView = LogView::STDERR;
+        updateLogOptions();
+        refreshLogs();
+        return TRUE;
+    case IDC_CLEAR:
+        clearLogs();
+        return TRUE;
+    case IDC_JUMP_LATEST:
+        mLogEdit.SetSel(-1, -1);
+        scrollRichEditCaret(mLogEdit);
+        return TRUE;
+    case IDC_WRAP_LINES:
+        mConfiguration.mPreferences.mWrapLines =
+            mWrapLinesCheck.GetCheck() == BST_CHECKED;
+        updateLogOptions();
+        refreshLogs();
+        savePreferences();
+        return TRUE;
+    case IDC_AUTO_SCROLL:
+        mConfiguration.mPreferences.mAutoScroll =
+            mAutoScrollCheck.GetCheck() == BST_CHECKED;
+        savePreferences();
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+LRESULT MainWindow::OnNotify(WPARAM wParam, LPARAM lParam) {
+    (void)wParam;
+    const auto* header = reinterpret_cast<const NMHDR*>(lParam);
+    if (header == nullptr || header->hwndFrom != mListView.GetHwnd()) {
+        return CWnd::OnNotify(wParam, lParam);
+    }
+    if (header->code == LVN_ITEMCHANGED) {
+        if (!mUpdatingList) {
+            syncSelection();
+        }
+        return 0;
+    }
+    if (header->code == NM_DBLCLK) {
+        const auto* activation = reinterpret_cast<const NMITEMACTIVATE*>(
+            lParam);
+        if (activation != nullptr &&
+            activation->iItem >= 0 &&
+            activation->iItem < mListView.GetItemCount()) {
+            mUpdatingList = true;
+            mListView.SetItemState(-1,
+                                   0,
+                                   LVIS_SELECTED | LVIS_FOCUSED);
+            mListView.SetItemState(activation->iItem,
+                                   LVIS_SELECTED | LVIS_FOCUSED,
+                                   LVIS_SELECTED | LVIS_FOCUSED);
+            mUpdatingList = false;
+            mListView.setSelectionAnchor(activation->iItem);
+            syncSelection();
+            onListActivated();
+        }
+        return 0;
+    }
+    return CWnd::OnNotify(wParam, lParam);
+}
+
+LRESULT MainWindow::WndProc(UINT message,
+                            WPARAM wParam,
+                            LPARAM lParam) {
+    switch (message) {
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xFFF0U) == SC_MINIMIZE) {
+            mHost.onMainWindowMinimizeRequested();
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        mHost.onMainWindowCloseRequested();
+        return 0;
+    case WM_GETMINMAXINFO: {
+        auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (limits != nullptr) {
+            limits->ptMinTrackSize.x = scaleForWindow(
+                GetHwnd(), MINIMUM_WINDOW_WIDTH);
+            limits->ptMinTrackSize.y = scaleForWindow(
+                GetHwnd(), MINIMUM_WINDOW_HEIGHT);
+            return 0;
+        }
+        break;
+    }
+    case WM_DPICHANGED: {
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+        if (suggested != nullptr) {
+            SetWindowPos(nullptr,
+                         *suggested,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        mCurrentDpi = windowDpi(GetHwnd());
+        updateControlFonts();
+        updateLogFont();
+        layoutControls();
+        return 0;
+    }
+    case WM_SIZE:
+        layoutControls();
+        return 0;
+    case WM_TIMER:
+        if (static_cast<UINT_PTR>(wParam) == PROCESS_EVENT_TIMER) {
+            pollProcessEvents();
+            return 0;
+        }
+        break;
+    case WM_ERASEBKGND:
+        return 1;
+    default:
+        break;
+    }
+    return WndProcDefault(message, wParam, lParam);
+}
+
+void MainWindow::OnDestroy() {
+    KillTimer(PROCESS_EVENT_TIMER);
 }
 
 }  // namespace command_runner::ui

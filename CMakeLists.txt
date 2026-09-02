@@ -56,6 +56,7 @@ set(COMMAND_RUNNER_SOURCES
     src/ui/command_dialog.cpp
     src/ui/close_dialog.cpp
     src/ui/main_window.cpp
+    src/ui/win32xx_helpers.cpp
     resources/CommandRunner.rc
 )
 

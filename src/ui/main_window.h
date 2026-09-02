@@ -11,6 +11,9 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <wxx_listview.h>
+#include <wxx_richedit.h>
+#include <wxx_stdcontrols.h>
 #include <wxx_wincore.h>
 
 namespace command_runner::ui {
@@ -23,20 +26,80 @@ public:
     virtual void onMainWindowMinimizeRequested() = 0;
 };
 
-class MainWindow final : public Win32xx::CWnd {
+class CommandListViewListener {
+public:
+    virtual ~CommandListViewListener() = default;
+
+    virtual void onListSelectionChanged() = 0;
+    virtual void onListActivated() = 0;
+    virtual void onListDeleteRequested() = 0;
+};
+
+class CommandListView final : public Win32xx::CListView {
+public:
+    void setListener(CommandListViewListener& listener) noexcept {
+        mListener = &listener;
+    }
+
+    void setSelectionAnchor(int index) noexcept {
+        mSelectionAnchorIndex = index;
+    }
+
+    [[nodiscard]] int focusedItem() const;
+
+protected:
+    LRESULT WndProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+
+private:
+    void notifySelectionChanged();
+    void selectRange(int targetIndex);
+    void moveFocus(int direction);
+    void moveToBoundary(bool last, bool select);
+    void toggleFocusedSelection();
+
+    CommandListViewListener* mListener{};
+    int mSelectionAnchorIndex{-1};
+};
+
+class SplitterListener {
+public:
+    virtual ~SplitterListener() = default;
+
+    virtual void onSplitterMoved(Win32xx::CPoint screenPoint) = 0;
+};
+
+class Splitter final : public Win32xx::CWnd {
+public:
+    void setListener(SplitterListener& listener) noexcept {
+        mListener = &listener;
+    }
+
+protected:
+    LRESULT WndProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    void PreRegisterClass(WNDCLASS& windowClass) override;
+    void PreCreate(CREATESTRUCT& createStruct) override;
+
+private:
+    SplitterListener* mListener{};
+    bool mDragging{};
+};
+
+class MainWindow final : public Win32xx::CWnd,
+                         public CommandListViewListener,
+                         public SplitterListener {
 public:
     MainWindow(HINSTANCE instance,
                ConfigData& configuration,
                ConfigStore& store,
                ProcessManager& processManager,
                MainWindowHost& host);
-    ~MainWindow();
+    ~MainWindow() override;
 
     MainWindow(const MainWindow&) = delete;
     MainWindow& operator=(const MainWindow&) = delete;
 
     [[nodiscard]] std::expected<void, DWORD> create(int showCommand);
-    [[nodiscard]] HWND window() const noexcept { return mWindow; }
+    [[nodiscard]] HWND window() const noexcept { return GetHwnd(); }
     void dispose() noexcept;
     void showStopping();
 
@@ -84,37 +147,20 @@ private:
 
     inline static constexpr wchar_t WINDOW_CLASS_NAME[] =
         L"CommandRunner.MainWindow";
-    inline static constexpr wchar_t SPLITTER_CLASS_NAME[] =
-        L"CommandRunner.HorizontalSplitter";
-
-    static LRESULT CALLBACK listViewProc(HWND window,
-                                         UINT message,
-                                         WPARAM wParam,
-                                         LPARAM lParam);
-    static LRESULT CALLBACK splitterProc(HWND window,
-                                         UINT message,
-                                         WPARAM wParam,
-                                         LPARAM lParam);
-
-    LRESULT handleListViewMessage(UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT forwardListViewMessage(UINT message,
-                                   WPARAM wParam,
-                                   LPARAM lParam) const;
 
     [[nodiscard]] std::expected<void, DWORD> createControls();
-    [[nodiscard]] std::expected<void, DWORD> registerSplitterClass() const;
-
+    void destroyControls() noexcept;
     void layoutControls();
     void updateListColumns();
     void updateLogFont();
     void updateLogOptions();
     void updateActionAvailability();
+    void updateControlFonts();
     void refreshRows();
     void refreshLogs();
     void pollProcessEvents();
     void savePreferences();
     void setSplitterFromClientY(int clientY);
-    void updateControlFonts();
 
     void startSelected();
     void stopSelected();
@@ -127,11 +173,6 @@ private:
     [[nodiscard]] bool saveConfiguration();
 
     void syncSelection();
-    void selectRange(int anchorIndex, int targetIndex);
-    void moveFocus(int direction);
-    void moveToBoundary(bool last, bool select);
-    void toggleFocusedSelection();
-    [[nodiscard]] int focusedItem() const;
     [[nodiscard]] bool isEditable(const CommandConfig& command) const;
     [[nodiscard]] const CommandConfig* commandById(
         std::wstring_view commandId) const;
@@ -140,35 +181,37 @@ private:
     [[nodiscard]] bool logIsAtBottom() const;
     [[nodiscard]] std::wstring formatLogLine(const LogLine& line) const;
     [[nodiscard]] static std::wstring formatTimestamp(double timestamp);
-    [[nodiscard]] static DWORD lastErrorOr(DWORD fallback);
-    [[nodiscard]] static int scaleForDpi(UINT dpi, int value);
-    [[nodiscard]] static int scaleForWindow(HWND window, int value);
+
+    void onListSelectionChanged() override;
+    void onListActivated() override;
+    void onListDeleteRequested() override;
+    void onSplitterMoved(Win32xx::CPoint screenPoint) override;
 
 protected:
     LRESULT WndProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
+    LRESULT OnNotify(WPARAM wParam, LPARAM lParam) override;
+    void OnDestroy() override;
     void PreRegisterClass(WNDCLASS& windowClass) override;
     void PreCreate(CREATESTRUCT& createStruct) override;
 
     HINSTANCE mInstance{};
-    HWND mWindow{};
-    HWND mActionBar{};
-    HWND mOptionsBar{};
-    HWND mListView{};
-    HWND mSplitter{};
-    HWND mLogLabel{};
-    HWND mLogEdit{};
-    std::array<HWND, ACTION_BUTTON_COUNT> mActionButtons{};
-    HWND mCombinedRadio{};
-    HWND mStdoutRadio{};
-    HWND mStderrRadio{};
-    HWND mClearButton{};
-    HWND mJumpLatestButton{};
-    HWND mWrapLinesCheck{};
-    HWND mAutoScrollCheck{};
-    WNDPROC mListViewPreviousProc{};
-    HMODULE mRichEditModule{};
-    HFONT mUiFont{};
-    HFONT mLogFont{};
+    Win32xx::CStatic mActionBar;
+    Win32xx::CStatic mOptionsBar;
+    CommandListView mListView;
+    Splitter mSplitter;
+    Win32xx::CStatic mLogLabel;
+    Win32xx::CRichEdit mLogEdit;
+    std::array<Win32xx::CButton, ACTION_BUTTON_COUNT> mActionButtons;
+    Win32xx::CButton mCombinedRadio;
+    Win32xx::CButton mStdoutRadio;
+    Win32xx::CButton mStderrRadio;
+    Win32xx::CButton mClearButton;
+    Win32xx::CButton mJumpLatestButton;
+    Win32xx::CButton mWrapLinesCheck;
+    Win32xx::CButton mAutoScrollCheck;
+    Win32xx::CFont mUiFont;
+    Win32xx::CFont mLogFont;
 
     ConfigData& mConfiguration;
     ConfigStore& mStore;
@@ -177,11 +220,9 @@ protected:
     std::vector<std::wstring> mSelectedCommandIds;
     std::wstring mActiveCommandId;
     LogView mLogView{LogView::COMBINED};
-    int mSelectionAnchorIndex{-1};
     int mSplitterPercent{INITIAL_SPLITTER_PERCENT};
     UINT mCurrentDpi{DEFAULT_DPI};
     bool mUpdatingList{};
-    bool mSplitterDragging{};
     bool mDisposed{};
 };
 

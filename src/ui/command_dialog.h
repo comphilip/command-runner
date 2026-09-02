@@ -38,13 +38,22 @@ private:
 
     CommandConfig mDraft;
     std::optional<CommandConfig> mResult;
+    Win32xx::CStatic mNameLabel;
+    Win32xx::CEdit mName;
+    Win32xx::CStatic mWorkingDirectoryLabel;
+    Win32xx::CEdit mWorkingDirectory;
+    Win32xx::CButton mBrowse;
+    Win32xx::CStatic mEncodingLabel;
     Win32xx::CEdit mCommandLine;
+    Win32xx::CStatic mCommandLineLabel;
     Win32xx::CComboBox mEncoding;
     Win32xx::CButton mShell;
     Win32xx::CButton mAutoStart;
+    Win32xx::CButton mSave;
+    Win32xx::CButton mCancel;
     int mFixedWindowHeight{};
     bool mEditing{};
-    HFONT mUiFont{};
+    Win32xx::CFont mUiFont;
 };
 
 }  // namespace command_runner::ui
