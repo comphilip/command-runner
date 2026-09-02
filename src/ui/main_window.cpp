@@ -121,6 +121,10 @@ void MainWindow::dispose() noexcept {
     mWrapLinesCheck = nullptr;
     mAutoScrollCheck = nullptr;
     mListViewPreviousProc = nullptr;
+    if (mUiFont != nullptr) {
+        DeleteObject(mUiFont);
+        mUiFont = nullptr;
+    }
     if (mLogFont != nullptr) {
         DeleteObject(mLogFont);
         mLogFont = nullptr;
@@ -186,6 +190,7 @@ std::expected<void, DWORD> MainWindow::create(int showCommand) {
     if (mCurrentDpi == 0) {
         mCurrentDpi = DEFAULT_DPI;
     }
+    updateControlFonts();
     updateLogFont();
     layoutControls();
     refreshRows();
@@ -337,10 +342,12 @@ LRESULT MainWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                          suggested->bottom - suggested->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
         }
-        mCurrentDpi = HIWORD(wParam);
+        const UINT windowDpi = GetDpiForWindow(mWindow);
+        mCurrentDpi = windowDpi != 0 ? windowDpi : LOWORD(wParam);
         if (mCurrentDpi == 0) {
             mCurrentDpi = DEFAULT_DPI;
         }
+        updateControlFonts();
         updateLogFont();
         layoutControls();
         return 0;
@@ -1061,6 +1068,58 @@ void MainWindow::updateLogFont() {
                  WM_SETFONT,
                  reinterpret_cast<WPARAM>(mLogFont),
                  TRUE);
+    if (oldFont != nullptr) {
+        DeleteObject(oldFont);
+    }
+}
+
+void MainWindow::updateControlFonts() {
+    if (mWindow == nullptr) {
+        return;
+    }
+    const int fontHeight = -MulDiv(9,
+                                   static_cast<int>(mCurrentDpi),
+                                   72);
+    const HFONT newFont = CreateFontW(fontHeight,
+                                      0,
+                                      0,
+                                      0,
+                                      FW_NORMAL,
+                                      FALSE,
+                                      FALSE,
+                                      FALSE,
+                                      DEFAULT_CHARSET,
+                                      OUT_DEFAULT_PRECIS,
+                                      CLIP_DEFAULT_PRECIS,
+                                      CLEARTYPE_QUALITY,
+                                      VARIABLE_PITCH | FF_SWISS,
+                                      L"Segoe UI");
+    if (newFont == nullptr) {
+        return;
+    }
+
+    const HFONT oldFont = mUiFont;
+    mUiFont = newFont;
+    const auto setFont = [this](HWND control) {
+        if (control != nullptr) {
+            SendMessageW(control,
+                         WM_SETFONT,
+                         reinterpret_cast<WPARAM>(mUiFont),
+                         TRUE);
+        }
+    };
+    setFont(mListView);
+    setFont(mLogLabel);
+    for (const HWND control : mActionButtons) {
+        setFont(control);
+    }
+    setFont(mCombinedRadio);
+    setFont(mStdoutRadio);
+    setFont(mStderrRadio);
+    setFont(mClearButton);
+    setFont(mJumpLatestButton);
+    setFont(mWrapLinesCheck);
+    setFont(mAutoScrollCheck);
     if (oldFont != nullptr) {
         DeleteObject(oldFont);
     }

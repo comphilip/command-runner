@@ -172,6 +172,9 @@ bool TrayIcon::addIcon() {
     if (mWindow == nullptr) {
         return false;
     }
+    if (mIconAdded) {
+        return true;
+    }
     if (!Shell_NotifyIconW(NIM_ADD, &mNotifyData)) {
         return false;
     }

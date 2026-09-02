@@ -2,6 +2,7 @@
 #include "resource.h"
 
 1 RT_MANIFEST "CommandRunner.manifest"
+IDI_COMMAND_RUNNER ICON "CommandRunner.ico"
 
 IDD_COMMAND_DIALOG DIALOGEX 0, 0, 430, 220
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
@@ -51,6 +52,7 @@ BEGIN
             VALUE "FileDescription", "Native Windows command runner\0"
             VALUE "FileVersion", "0.1.5.0\0"
             VALUE "InternalName", "CommandRunner.exe\0"
+            VALUE "LegalCopyright", "Copyright (c) Command Runner contributors\0"
             VALUE "OriginalFilename", "CommandRunner.exe\0"
             VALUE "ProductName", "Command Runner\0"
             VALUE "ProductVersion", "0.1.5.0\0"

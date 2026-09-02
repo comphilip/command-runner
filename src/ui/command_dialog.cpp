@@ -7,6 +7,7 @@
 #include <wil/resource.h>
 
 #include <algorithm>
+#include <array>
 #include <cwctype>
 #include <memory>
 #include <ranges>
@@ -134,6 +135,7 @@ struct CommandDialog::DialogState {
     bool mEditing{};
     CommandConfig mDraft;
     std::optional<CommandConfig> mResult;
+    HFONT mUiFont{};
 };
 
 std::optional<CommandConfig> CommandDialog::show(
@@ -229,6 +231,7 @@ INT_PTR CALLBACK CommandDialog::dialogProc(HWND dialog,
         RECT windowRect{};
         GetWindowRect(dialog, &windowRect);
         state->mFixedWindowHeight = windowRect.bottom - windowRect.top;
+        updateControlFont(*state);
         layoutControls(*state);
         SetFocus(GetDlgItem(dialog, IDC_COMMAND_NAME));
         return FALSE;
@@ -261,6 +264,7 @@ INT_PTR CALLBACK CommandDialog::dialogProc(HWND dialog,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             state->mFixedWindowHeight = suggested->bottom - suggested->top;
         }
+        updateControlFont(*state);
         layoutControls(*state);
         return TRUE;
     }
@@ -288,6 +292,12 @@ INT_PTR CALLBACK CommandDialog::dialogProc(HWND dialog,
     }
     case WM_CLOSE:
         EndDialog(dialog, IDC_COMMAND_CANCEL);
+        return TRUE;
+    case WM_DESTROY:
+        if (state->mUiFont != nullptr) {
+            DeleteObject(state->mUiFont);
+            state->mUiFont = nullptr;
+        }
         return TRUE;
     }
     return FALSE;
@@ -321,6 +331,65 @@ LRESULT CALLBACK CommandDialog::commandLineProc(HWND control,
                            message,
                            wParam,
                            lParam);
+}
+
+void CommandDialog::updateControlFont(DialogState& state) {
+    if (state.mDialog == nullptr) {
+        return;
+    }
+    UINT dpi = GetDpiForWindow(state.mDialog);
+    if (dpi == 0) {
+        dpi = DEFAULT_DPI;
+    }
+    const HFONT newFont = CreateFontW(-MulDiv(9,
+                                               static_cast<int>(dpi),
+                                               72),
+                                      0,
+                                      0,
+                                      0,
+                                      FW_NORMAL,
+                                      FALSE,
+                                      FALSE,
+                                      FALSE,
+                                      DEFAULT_CHARSET,
+                                      OUT_DEFAULT_PRECIS,
+                                      CLIP_DEFAULT_PRECIS,
+                                      CLEARTYPE_QUALITY,
+                                      VARIABLE_PITCH | FF_SWISS,
+                                      L"Segoe UI");
+    if (newFont == nullptr) {
+        return;
+    }
+
+    const HFONT oldFont = state.mUiFont;
+    state.mUiFont = newFont;
+    const std::array<int, 13> controlIds{
+        IDC_COMMAND_NAME_LABEL,
+        IDC_COMMAND_NAME,
+        IDC_COMMAND_WORKING_DIRECTORY_LABEL,
+        IDC_COMMAND_WORKING_DIRECTORY,
+        IDC_COMMAND_BROWSE,
+        IDC_COMMAND_ENCODING_LABEL,
+        IDC_COMMAND_ENCODING,
+        IDC_COMMAND_SHELL,
+        IDC_COMMAND_AUTO_START,
+        IDC_COMMAND_LINE_LABEL,
+        IDC_COMMAND_LINE,
+        IDC_COMMAND_SAVE,
+        IDC_COMMAND_CANCEL,
+    };
+    for (const int controlId : controlIds) {
+        const HWND control = GetDlgItem(state.mDialog, controlId);
+        if (control != nullptr) {
+            SendMessageW(control,
+                         WM_SETFONT,
+                         reinterpret_cast<WPARAM>(state.mUiFont),
+                         TRUE);
+        }
+    }
+    if (oldFont != nullptr) {
+        DeleteObject(oldFont);
+    }
 }
 
 void CommandDialog::layoutControls(DialogState& state) {

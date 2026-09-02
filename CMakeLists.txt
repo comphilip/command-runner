@@ -1,11 +1,18 @@
 cmake_minimum_required(VERSION 3.25)
 
-# Use the user's vcpkg installation automatically when it is available.  The
+# Use the user's vcpkg installation automatically when it is available. The
 # manifest remains usable with an explicit -DCMAKE_TOOLCHAIN_FILE as well.
-if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
-    set(CMAKE_TOOLCHAIN_FILE
-        "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE FILEPATH "vcpkg toolchain file")
+if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        set(VCPKG_ROOT_PATH "$ENV{VCPKG_ROOT}")
+    elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
+        set(VCPKG_ROOT_PATH "$ENV{VCPKG_INSTALLATION_ROOT}")
+    endif()
+    if(DEFINED VCPKG_ROOT_PATH)
+        set(CMAKE_TOOLCHAIN_FILE
+            "${VCPKG_ROOT_PATH}/scripts/buildsystems/vcpkg.cmake"
+            CACHE FILEPATH "vcpkg toolchain file")
+    endif()
 endif()
 
 set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING
@@ -16,6 +23,12 @@ project(CommandRunner
     DESCRIPTION "A native Windows command runner"
     LANGUAGES CXX
 )
+
+# Keep a Release PDB for post-release crash analysis. The PDB is retained by
+# CI as a symbol artifact and is not shipped beside the single EXE.
+if(MSVC)
+    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT ProgramDatabase)
+endif()
 
 if(NOT WIN32)
     message(FATAL_ERROR "Command Runner is currently supported on Windows only.")
@@ -80,6 +93,7 @@ target_compile_options(CommandRunner PRIVATE
 )
 
 target_link_options(CommandRunner PRIVATE
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/DEBUG>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/LTCG>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:REF>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:ICF>

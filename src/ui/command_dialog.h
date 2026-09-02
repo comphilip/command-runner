@@ -26,6 +26,7 @@ private:
                                             UINT message,
                                             WPARAM wParam,
                                             LPARAM lParam);
+    static void updateControlFont(DialogState& state);
     static void layoutControls(DialogState& state);
     static void save(DialogState& state);
     static void browseForDirectory(DialogState& state);

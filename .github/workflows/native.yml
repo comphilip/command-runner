@@ -1,0 +1,51 @@
+name: Native Windows build
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows x64 ${{ matrix.configuration }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: Debug
+            preset: windows-x64-debug
+          - configuration: Release
+            preset: windows-x64-release
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Enable MSVC tools
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel
+
+      - name: Run tests
+        shell: pwsh
+        run: ctest --preset "${{ matrix.preset }}" --output-on-failure
+
+      - name: Verify Release artifact
+        if: matrix.configuration == 'Release'
+        shell: pwsh
+        run: |
+          .\scripts\verify-release.ps1 `
+            -ExecutablePath "out\build\windows-x64-release\Release\CommandRunner.exe"

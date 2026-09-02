@@ -117,6 +117,7 @@ private:
     void pollProcessEvents();
     void savePreferences();
     void setSplitterFromClientY(int clientY);
+    void updateControlFonts();
 
     void startSelected();
     void stopSelected();
@@ -164,6 +165,7 @@ private:
     HWND mAutoScrollCheck{};
     WNDPROC mListViewPreviousProc{};
     HMODULE mRichEditModule{};
+    HFONT mUiFont{};
     HFONT mLogFont{};
 
     ConfigData& mConfiguration;

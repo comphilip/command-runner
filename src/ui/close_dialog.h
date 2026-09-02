@@ -22,8 +22,11 @@ private:
     struct DialogState {
         std::size_t mRunningCount{};
         CloseAction mAction{CloseAction::CANCEL};
+        HWND mDialog{};
+        HFONT mUiFont{};
     };
 
+    static void updateControlFont(DialogState& state);
     static INT_PTR CALLBACK dialogProc(HWND dialog,
                                        UINT message,
                                        WPARAM wParam,

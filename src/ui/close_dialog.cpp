@@ -2,6 +2,7 @@
 
 #include "resource.h"
 
+#include <array>
 #include <string>
 
 namespace command_runner::ui {
@@ -29,6 +30,7 @@ INT_PTR CALLBACK CloseDialog::dialogProc(HWND dialog,
         if (state == nullptr) {
             return FALSE;
         }
+        state->mDialog = dialog;
         SetWindowLongPtrW(dialog,
                           DWLP_USER,
                           reinterpret_cast<LONG_PTR>(state));
@@ -36,6 +38,7 @@ INT_PTR CALLBACK CloseDialog::dialogProc(HWND dialog,
             std::to_wstring(state->mRunningCount) +
             L" command(s) are still running. Choose an action.";
         SetDlgItemTextW(dialog, IDC_CLOSE_MESSAGE, messageText.c_str());
+        updateControlFont(*state);
         SetFocus(GetDlgItem(dialog, IDC_CLOSE_CANCEL));
         return FALSE;
     }
@@ -67,7 +70,78 @@ INT_PTR CALLBACK CloseDialog::dialogProc(HWND dialog,
         EndDialog(dialog, IDC_CLOSE_CANCEL);
         return TRUE;
     }
+    if (message == WM_DPICHANGED) {
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+        if (suggested != nullptr) {
+            SetWindowPos(dialog,
+                         nullptr,
+                         suggested->left,
+                         suggested->top,
+                         suggested->right - suggested->left,
+                         suggested->bottom - suggested->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        updateControlFont(*state);
+        return TRUE;
+    }
+    if (message == WM_DESTROY) {
+        if (state->mUiFont != nullptr) {
+            DeleteObject(state->mUiFont);
+            state->mUiFont = nullptr;
+        }
+        return TRUE;
+    }
     return FALSE;
+}
+
+void CloseDialog::updateControlFont(DialogState& state) {
+    if (state.mDialog == nullptr) {
+        return;
+    }
+    UINT dpi = GetDpiForWindow(state.mDialog);
+    if (dpi == 0) {
+        dpi = 96;
+    }
+    const HFONT newFont = CreateFontW(-MulDiv(9,
+                                               static_cast<int>(dpi),
+                                               72),
+                                      0,
+                                      0,
+                                      0,
+                                      FW_NORMAL,
+                                      FALSE,
+                                      FALSE,
+                                      FALSE,
+                                      DEFAULT_CHARSET,
+                                      OUT_DEFAULT_PRECIS,
+                                      CLIP_DEFAULT_PRECIS,
+                                      CLEARTYPE_QUALITY,
+                                      VARIABLE_PITCH | FF_SWISS,
+                                      L"Segoe UI");
+    if (newFont == nullptr) {
+        return;
+    }
+
+    const HFONT oldFont = state.mUiFont;
+    state.mUiFont = newFont;
+    const std::array<int, 4> controlIds{
+        IDC_CLOSE_MESSAGE,
+        IDC_CLOSE_STOP_AND_EXIT,
+        IDC_CLOSE_CANCEL,
+        IDC_CLOSE_TRAY,
+    };
+    for (const int controlId : controlIds) {
+        const HWND control = GetDlgItem(state.mDialog, controlId);
+        if (control != nullptr) {
+            SendMessageW(control,
+                         WM_SETFONT,
+                         reinterpret_cast<WPARAM>(state.mUiFont),
+                         TRUE);
+        }
+    }
+    if (oldFont != nullptr) {
+        DeleteObject(oldFont);
+    }
 }
 
 }  // namespace command_runner::ui
