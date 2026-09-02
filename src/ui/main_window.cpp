@@ -139,6 +139,7 @@ std::expected<void, DWORD> MainWindow::create(int showCommand) {
     mDisposed = false;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
+    windowClass.style = CS_HREDRAW | CS_VREDRAW;
     windowClass.hInstance = mInstance;
     windowClass.lpfnWndProc = &MainWindow::windowProc;
     windowClass.lpszClassName = WINDOW_CLASS_NAME;
@@ -1016,6 +1017,15 @@ void MainWindow::layoutControls() {
                  SWP_NOZORDER | SWP_NOACTIVATE);
 
     updateListColumns();
+
+    // WS_CLIPCHILDREN keeps the parent from painting over its controls, but
+    // it also means a resize can leave moved child windows outside the
+    // invalidated region. Invalidate the complete tree so every control gets
+    // a paint pass after its new position is applied.
+    RedrawWindow(mWindow,
+                 nullptr,
+                 nullptr,
+                 RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 void MainWindow::updateListColumns() {
