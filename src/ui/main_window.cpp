@@ -944,7 +944,6 @@ void MainWindow::layoutControls() {
 
     const int actionY = scaleForWindow(mWindow, 6);
     int actionX = margin;
-    const int actionGap = scaleForWindow(mWindow, 4);
     for (std::size_t index = 0; index < mActionButtons.size(); ++index) {
         const int buttonWidth =
             scaleForWindow(mWindow, ACTION_BUTTON_WIDTHS[index]);
@@ -955,7 +954,7 @@ void MainWindow::layoutControls() {
                      buttonWidth,
                      scaleForWindow(mWindow, ACTION_BAR_BUTTON_HEIGHT),
                      SWP_NOZORDER | SWP_NOACTIVATE);
-        actionX += buttonWidth + actionGap;
+        actionX += buttonWidth;
     }
 
     const int optionsY = bottomY + scaleForWindow(mWindow, 1);
