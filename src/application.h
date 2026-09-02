@@ -32,7 +32,7 @@ private:
     static constexpr UINT WM_APPLICATION_RESTORE = WM_APP + 52;
     static constexpr UINT WM_APPLICATION_START_ALL = WM_APP + 53;
     static constexpr UINT WM_APPLICATION_STOP_ALL = WM_APP + 54;
-    static constexpr UINT EXIT_POLL_TIMER = 1;
+    static constexpr UINT_PTR EXIT_POLL_TIMER_REQUEST = 1;
 
     void onMainWindowCloseRequested() override;
     void onMainWindowMinimizeRequested() override;
@@ -60,6 +60,7 @@ private:
     std::unique_ptr<ui::MainWindow> mWindow;
     std::unique_ptr<platform::TrayIcon> mTray;
     DWORD mThreadId{};
+    UINT_PTR mExitPollTimer{};
     bool mExitRequested{};
     bool mExitFinished{};
 };

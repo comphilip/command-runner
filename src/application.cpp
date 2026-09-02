@@ -24,7 +24,10 @@ Application::Application(HINSTANCE instance,
 }
 
 Application::~Application() {
-    KillTimer(nullptr, EXIT_POLL_TIMER);
+    if (mExitPollTimer != 0) {
+        KillTimer(nullptr, mExitPollTimer);
+        mExitPollTimer = 0;
+    }
     mTray.reset();
     mWindow.reset();
 }
@@ -59,7 +62,7 @@ std::expected<int, DWORD> Application::run(int showCommand) {
             continue;
         }
         if (message.hwnd == nullptr && message.message == WM_TIMER &&
-            message.wParam == EXIT_POLL_TIMER) {
+            static_cast<UINT_PTR>(message.wParam) == mExitPollTimer) {
             if (mExitRequested && mProcessManager.runningIds().empty()) {
                 finishExit();
             }
@@ -163,7 +166,6 @@ void Application::requestCloseNow() {
 
     const ui::CloseAction action = ui::CloseDialog::show(
         mWindow->window(),
-        mInstance,
         running.size());
     switch (action) {
     case ui::CloseAction::EXIT:
@@ -240,7 +242,14 @@ void Application::beginExit() {
     if (mWindow != nullptr) {
         mWindow->showStopping();
     }
-    SetTimer(nullptr, EXIT_POLL_TIMER, 100, nullptr);
+    if (mExitPollTimer == 0) {
+        // For a thread timer (hWnd == nullptr), Windows returns the timer ID
+        // that must be used to recognize and destroy the timer.
+        mExitPollTimer = SetTimer(nullptr,
+                                  EXIT_POLL_TIMER_REQUEST,
+                                  100,
+                                  nullptr);
+    }
 }
 
 void Application::finishExit() {
@@ -248,7 +257,10 @@ void Application::finishExit() {
         return;
     }
     mExitFinished = true;
-    KillTimer(nullptr, EXIT_POLL_TIMER);
+    if (mExitPollTimer != 0) {
+        KillTimer(nullptr, mExitPollTimer);
+        mExitPollTimer = 0;
+    }
     const auto saved = mStore.save(mConfiguration);
     if (!saved) {
         MessageBoxW(mWindow != nullptr ? mWindow->window() : nullptr,

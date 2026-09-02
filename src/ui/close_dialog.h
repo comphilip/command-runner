@@ -15,22 +15,7 @@ enum class CloseAction {
 class CloseDialog final {
 public:
     [[nodiscard]] static CloseAction show(HWND owner,
-                                          HINSTANCE instance,
                                           std::size_t runningCount);
-
-private:
-    struct DialogState {
-        std::size_t mRunningCount{};
-        CloseAction mAction{CloseAction::CANCEL};
-        HWND mDialog{};
-        HFONT mUiFont{};
-    };
-
-    static void updateControlFont(DialogState& state);
-    static INT_PTR CALLBACK dialogProc(HWND dialog,
-                                       UINT message,
-                                       WPARAM wParam,
-                                       LPARAM lParam);
 };
 
 }  // namespace command_runner::ui
