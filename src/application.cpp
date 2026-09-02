@@ -65,6 +65,10 @@ std::expected<int, DWORD> Application::run(int showCommand) {
             }
             continue;
         }
+        if (mWindow != nullptr &&
+            IsDialogMessageW(mWindow->window(), &message) != FALSE) {
+            continue;
+        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }

@@ -161,7 +161,7 @@ std::expected<void, DWORD> MainWindow::create(int showCommand) {
     }
 
     mWindow = CreateWindowExW(
-        0,
+        WS_EX_CONTROLPARENT,
         WINDOW_CLASS_NAME,
         L"Command Runner",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
@@ -764,7 +764,7 @@ std::expected<void, DWORD> MainWindow::createControls() {
     mStderrRadio = CreateWindowExW(
         0,
         L"BUTTON",
-        L"Standard &error",
+        L"std&err",
         childStyle | WS_TABSTOP | BS_AUTORADIOBUTTON,
         0,
         0,
