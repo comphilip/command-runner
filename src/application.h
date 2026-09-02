@@ -9,6 +9,7 @@
 #include <memory>
 
 #include <windows.h>
+#include <wxx_appcore.h>
 
 namespace command_runner {
 
@@ -53,6 +54,7 @@ private:
     void finishExit();
     void postDeferred(UINT message) const noexcept;
 
+    Win32xx::CWinApp mWinApp;
     HINSTANCE mInstance{};
     ConfigData mConfiguration;
     ConfigStore& mStore;

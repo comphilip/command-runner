@@ -41,6 +41,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_path(WIL_INCLUDE_DIR NAMES wil/resource.h REQUIRED)
+set(WIN32XX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd/win32xx/include")
+if(NOT EXISTS "${WIN32XX_INCLUDE_DIR}/wxx_wincore.h")
+    message(FATAL_ERROR "Win32++ headers were not found at ${WIN32XX_INCLUDE_DIR}.")
+endif()
 
 set(COMMAND_RUNNER_SOURCES
     src/main.cpp
@@ -67,6 +71,7 @@ target_include_directories(CommandRunner
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/resources
         ${WIL_INCLUDE_DIR}
+        ${WIN32XX_INCLUDE_DIR}
 )
 
 target_link_libraries(CommandRunner
@@ -122,6 +127,7 @@ if(BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${WIL_INCLUDE_DIR}
+            ${WIN32XX_INCLUDE_DIR}
     )
     target_link_libraries(CommandRunnerConfigTests PRIVATE nlohmann_json::nlohmann_json ole32 shell32)
     target_compile_definitions(CommandRunnerConfigTests PRIVATE
@@ -136,6 +142,7 @@ if(BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${WIL_INCLUDE_DIR}
+            ${WIN32XX_INCLUDE_DIR}
     )
     target_link_libraries(CommandRunnerProcessTests PRIVATE ole32 shell32 user32)
     target_compile_definitions(CommandRunnerProcessTests PRIVATE

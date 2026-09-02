@@ -25,17 +25,11 @@ TrayIcon::~TrayIcon() {
 }
 
 std::expected<void, DWORD> TrayIcon::create() {
-    if (mWindow != nullptr) {
+    if (GetHwnd() != nullptr) {
         return {};
     }
 
-    const auto registered = registerWindowClass();
-    if (!registered) {
-        return registered;
-    }
-
-    mIcon = LoadIconW(mInstance,
-                      MAKEINTRESOURCEW(IDI_COMMAND_RUNNER));
+    mIcon = GetApp()->LoadIcon(IDI_COMMAND_RUNNER);
     if (mIcon == nullptr) {
         mIcon = LoadIconW(nullptr, IDI_APPLICATION);
     }
@@ -44,32 +38,17 @@ std::expected<void, DWORD> TrayIcon::create() {
                                                ERROR_RESOURCE_NAME_NOT_FOUND));
     }
 
-    mMenu = CreatePopupMenu();
-    if (mMenu == nullptr) {
-        return std::unexpected(effectiveError(GetLastError(),
-                                               ERROR_NOT_ENOUGH_MEMORY));
-    }
-    AppendMenuW(mMenu, MF_STRING, TRAY_OPEN, L"&Open");
-    AppendMenuW(mMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(mMenu, MF_STRING, TRAY_STOP_ALL, L"S&top All");
-    AppendMenuW(mMenu, MF_STRING, TRAY_START_ALL, L"&Start All");
-    AppendMenuW(mMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(mMenu, MF_STRING, TRAY_EXIT, L"E&xit");
-
-    mWindow = CreateWindowExW(WS_EX_TOOLWINDOW,
-                              WINDOW_CLASS_NAME,
-                              L"Command Runner",
-                              WS_POPUP,
-                              0,
-                              0,
-                              0,
-                              0,
-                              nullptr,
-                              nullptr,
-                              mInstance,
-                              this);
-    if (mWindow == nullptr) {
-        const DWORD error = effectiveError(GetLastError(),
+    try {
+        mMenu.CreatePopupMenu();
+        mMenu.AppendMenu(MF_STRING, TRAY_OPEN, L"&Open");
+        mMenu.AppendMenu(MF_SEPARATOR, 0, static_cast<LPCTSTR>(nullptr));
+        mMenu.AppendMenu(MF_STRING, TRAY_STOP_ALL, L"S&top All");
+        mMenu.AppendMenu(MF_STRING, TRAY_START_ALL, L"&Start All");
+        mMenu.AppendMenu(MF_SEPARATOR, 0, static_cast<LPCTSTR>(nullptr));
+        mMenu.AppendMenu(MF_STRING, TRAY_EXIT, L"E&xit");
+        Create();
+    } catch (const Win32xx::CException& exception) {
+        const DWORD error = effectiveError(exception.GetError(),
                                            ERROR_FUNCTION_FAILED);
         destroy();
         return std::unexpected(error);
@@ -77,7 +56,7 @@ std::expected<void, DWORD> TrayIcon::create() {
 
     mNotifyData = {};
     mNotifyData.cbSize = sizeof(NOTIFYICONDATAW);
-    mNotifyData.hWnd = mWindow;
+    mNotifyData.hWnd = GetHwnd();
     mNotifyData.uID = 1;
     mNotifyData.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     mNotifyData.uCallbackMessage = TRAY_CALLBACK_MESSAGE;
@@ -102,41 +81,18 @@ void TrayIcon::destroy() noexcept {
         Shell_NotifyIconW(NIM_DELETE, &mNotifyData);
         mIconAdded = false;
     }
-    if (mWindow != nullptr && IsWindow(mWindow) != FALSE) {
-        DestroyWindow(mWindow);
+    if (GetHwnd() != nullptr && ::IsWindow(GetHwnd()) != FALSE) {
+        Destroy();
     }
-    mWindow = nullptr;
-    if (mMenu != nullptr) {
-        DestroyMenu(mMenu);
-        mMenu = nullptr;
-    }
+    mMenu.Destroy();
     mIcon = nullptr;
     mNotifyData = {};
 }
 
-LRESULT CALLBACK TrayIcon::windowProc(HWND window,
-                                      UINT message,
-                                      WPARAM wParam,
-                                      LPARAM lParam) {
-    auto* self = reinterpret_cast<TrayIcon*>(
-        GetWindowLongPtrW(window, GWLP_USERDATA));
-    if (message == WM_NCCREATE) {
-        const auto* createStruct = reinterpret_cast<const CREATESTRUCTW*>(lParam);
-        if (createStruct == nullptr || createStruct->lpCreateParams == nullptr) {
-            return FALSE;
-        }
-        self = static_cast<TrayIcon*>(createStruct->lpCreateParams);
-        SetWindowLongPtrW(window,
-                          GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(self));
-    }
-    if (self == nullptr) {
-        return DefWindowProcW(window, message, wParam, lParam);
-    }
-
-    if (self->mTaskbarCreated != 0 && message == self->mTaskbarCreated) {
-        self->mIconAdded = false;
-        const bool restored = self->addIcon();
+LRESULT TrayIcon::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
+    if (mTaskbarCreated != 0 && message == mTaskbarCreated) {
+        mIconAdded = false;
+        const bool restored = addIcon();
         (void)restored;
         return 0;
     }
@@ -145,35 +101,33 @@ LRESULT CALLBACK TrayIcon::windowProc(HWND window,
         if (trayEvent == WM_LBUTTONUP ||
             trayEvent == WM_LBUTTONDBLCLK || trayEvent == NIN_SELECT ||
             trayEvent == NIN_KEYSELECT) {
-            self->mListener.onTrayRestoreRequested();
+            mListener.onTrayRestoreRequested();
         } else if (trayEvent == WM_RBUTTONUP ||
                    trayEvent == WM_CONTEXTMENU) {
-            self->showMenu();
+            showMenu();
         }
         return 0;
     }
-    return DefWindowProcW(window, message, wParam, lParam);
+    return WndProcDefault(message, wParam, lParam);
 }
 
-std::expected<void, DWORD> TrayIcon::registerWindowClass() const {
-    WNDCLASSEXW windowClass{};
-    windowClass.cbSize = sizeof(WNDCLASSEXW);
-    windowClass.hInstance = mInstance;
-    windowClass.lpfnWndProc = &TrayIcon::windowProc;
+void TrayIcon::PreRegisterClass(WNDCLASS& windowClass) {
     windowClass.lpszClassName = WINDOW_CLASS_NAME;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    if (RegisterClassExW(&windowClass) == 0) {
-        const DWORD error = GetLastError();
-        if (error != ERROR_CLASS_ALREADY_EXISTS) {
-            return std::unexpected(effectiveError(error,
-                                                   ERROR_FUNCTION_FAILED));
-        }
-    }
-    return {};
+}
+
+void TrayIcon::PreCreate(CREATESTRUCT& createStruct) {
+    createStruct.dwExStyle = WS_EX_TOOLWINDOW;
+    createStruct.style = WS_POPUP;
+    createStruct.x = 0;
+    createStruct.y = 0;
+    createStruct.cx = 0;
+    createStruct.cy = 0;
+    createStruct.lpszName = L"Command Runner";
 }
 
 bool TrayIcon::addIcon() {
-    if (mWindow == nullptr) {
+    if (GetHwnd() == nullptr) {
         return false;
     }
     if (mIconAdded) {
@@ -189,23 +143,21 @@ bool TrayIcon::addIcon() {
 }
 
 void TrayIcon::showMenu() {
-    if (mMenu == nullptr || mWindow == nullptr) {
+    if (mMenu == nullptr || GetHwnd() == nullptr) {
         return;
     }
     POINT cursor{};
     if (GetCursorPos(&cursor) == FALSE) {
         return;
     }
-    SetForegroundWindow(mWindow);
-    const UINT command = TrackPopupMenu(mMenu,
-                                        TPM_RETURNCMD | TPM_NONOTIFY |
-                                            TPM_RIGHTBUTTON,
-                                        cursor.x,
-                                        cursor.y,
-                                        0,
-                                        mWindow,
-                                        nullptr);
-    PostMessageW(mWindow, WM_NULL, 0, 0);
+    ::SetForegroundWindow(GetHwnd());
+    const UINT command = mMenu.TrackPopupMenu(
+        TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+        cursor.x,
+        cursor.y,
+        GetHwnd(),
+        nullptr);
+    PostMessage(WM_NULL, 0, 0);
     dispatchMenuCommand(command);
 }
 

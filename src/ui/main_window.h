@@ -10,6 +10,8 @@
 #include <vector>
 
 #include <windows.h>
+#include <shellapi.h>
+#include <wxx_wincore.h>
 
 namespace command_runner::ui {
 
@@ -21,7 +23,7 @@ public:
     virtual void onMainWindowMinimizeRequested() = 0;
 };
 
-class MainWindow final {
+class MainWindow final : public Win32xx::CWnd {
 public:
     MainWindow(HINSTANCE instance,
                ConfigData& configuration,
@@ -85,10 +87,6 @@ private:
     inline static constexpr wchar_t SPLITTER_CLASS_NAME[] =
         L"CommandRunner.HorizontalSplitter";
 
-    static LRESULT CALLBACK windowProc(HWND window,
-                                       UINT message,
-                                       WPARAM wParam,
-                                       LPARAM lParam);
     static LRESULT CALLBACK listViewProc(HWND window,
                                          UINT message,
                                          WPARAM wParam,
@@ -98,7 +96,6 @@ private:
                                          WPARAM wParam,
                                          LPARAM lParam);
 
-    LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleListViewMessage(UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT forwardListViewMessage(UINT message,
                                    WPARAM wParam,
@@ -146,6 +143,11 @@ private:
     [[nodiscard]] static DWORD lastErrorOr(DWORD fallback);
     [[nodiscard]] static int scaleForDpi(UINT dpi, int value);
     [[nodiscard]] static int scaleForWindow(HWND window, int value);
+
+protected:
+    LRESULT WndProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    void PreRegisterClass(WNDCLASS& windowClass) override;
+    void PreCreate(CREATESTRUCT& createStruct) override;
 
     HINSTANCE mInstance{};
     HWND mWindow{};

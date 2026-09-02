@@ -4,6 +4,8 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <wxx_wincore.h>
+#include <wxx_menu.h>
 
 namespace command_runner::platform {
 
@@ -17,7 +19,7 @@ public:
     virtual void onTrayExitRequested() = 0;
 };
 
-class TrayIcon final {
+class TrayIcon final : public Win32xx::CWnd {
 public:
     TrayIcon(HINSTANCE instance, TrayIconListener& listener);
     ~TrayIcon();
@@ -38,19 +40,18 @@ private:
     inline static constexpr wchar_t WINDOW_CLASS_NAME[] =
         L"CommandRunner.TrayIcon";
 
-    static LRESULT CALLBACK windowProc(HWND window,
-                                       UINT message,
-                                       WPARAM wParam,
-                                       LPARAM lParam);
-    [[nodiscard]] std::expected<void, DWORD> registerWindowClass() const;
     [[nodiscard]] bool addIcon();
     void showMenu();
     void dispatchMenuCommand(UINT command);
 
+protected:
+    LRESULT WndProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    void PreRegisterClass(WNDCLASS& windowClass) override;
+    void PreCreate(CREATESTRUCT& createStruct) override;
+
     HINSTANCE mInstance{};
     TrayIconListener& mListener;
-    HWND mWindow{};
-    HMENU mMenu{};
+    Win32xx::CMenu mMenu;
     HICON mIcon{};
     NOTIFYICONDATAW mNotifyData{};
     UINT mTaskbarCreated{};
