@@ -23,32 +23,3 @@ BEGIN
     DEFPUSHBUTTON   "&Save", IDC_COMMAND_SAVE, 330, 193, 42, 20, WS_TABSTOP
     PUSHBUTTON      "&Cancel", IDC_COMMAND_CANCEL, 378, 193, 42, 20, WS_TABSTOP
 END
-
-VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,5,0
- PRODUCTVERSION 0,1,5,0
- FILEFLAGSMASK 0x3fL
- FILEFLAGS 0x0L
- FILEOS 0x40004L
- FILETYPE 0x1L
- FILESUBTYPE 0x0L
-BEGIN
-    BLOCK "StringFileInfo"
-    BEGIN
-        BLOCK "040904B0"
-        BEGIN
-            VALUE "CompanyName", "Command Runner contributors\0"
-            VALUE "FileDescription", "Native Windows command runner\0"
-            VALUE "FileVersion", "0.2.0.0\0"
-            VALUE "InternalName", "CommandRunner.exe\0"
-            VALUE "LegalCopyright", "Copyright (c) Command Runner contributors\0"
-            VALUE "OriginalFilename", "CommandRunner.exe\0"
-            VALUE "ProductName", "Command Runner\0"
-            VALUE "ProductVersion", "0.2.0.0\0"
-        END
-    END
-    BLOCK "VarFileInfo"
-    BEGIN
-        VALUE "Translation", 0x0409, 1200
-    END
-END

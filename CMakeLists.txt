@@ -37,6 +37,20 @@ if(NOT WIN32)
     message(FATAL_ERROR "Command Runner is currently supported on Windows only.")
 endif()
 
+set(COMMAND_RUNNER_FILE_VERSION "${PROJECT_VERSION}.1")
+set(COMMAND_RUNNER_FILE_VERSION_RC
+    "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},1")
+set(COMMAND_RUNNER_PRODUCT_VERSION_RC
+    "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0")
+
+set(COMMAND_RUNNER_VERSION_RESOURCE
+    "${CMAKE_CURRENT_BINARY_DIR}/CommandRunnerVersion.rc")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/CommandRunnerVersion.rc.in"
+    "${COMMAND_RUNNER_VERSION_RESOURCE}"
+    @ONLY
+)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -58,6 +72,7 @@ set(COMMAND_RUNNER_SOURCES
     src/ui/main_window.cpp
     src/ui/win32xx_helpers.cpp
     resources/CommandRunner.rc
+    ${COMMAND_RUNNER_VERSION_RESOURCE}
 )
 
 add_executable(CommandRunner WIN32 ${COMMAND_RUNNER_SOURCES})
