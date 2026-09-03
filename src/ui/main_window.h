@@ -10,12 +10,12 @@
 
 #include <windows.h>
 #include <shellapi.h>
-#include <wxx_listview.h>
-#include <wxx_rebar.h>
-#include <wxx_richedit.h>
-#include <wxx_stdcontrols.h>
-#include <wxx_toolbar.h>
-#include <wxx_wincore.h>
+#include <win32xx/wxx_listview.h>
+#include <win32xx/wxx_rebar.h>
+#include <win32xx/wxx_richedit.h>
+#include <win32xx/wxx_stdcontrols.h>
+#include <win32xx/wxx_toolbar.h>
+#include <win32xx/wxx_wincore.h>
 
 namespace command_runner::ui {
 

@@ -3,7 +3,7 @@
 #include "resource.h"
 #include "ui/win32xx_helpers.h"
 
-#include <wxx_folderdialog.h>
+#include <win32xx/wxx_folderdialog.h>
 
 #include <algorithm>
 #include <array>

@@ -4,8 +4,8 @@
 
 #include <windows.h>
 #include <shellapi.h>
-#include <wxx_wincore.h>
-#include <wxx_menu.h>
+#include <win32xx/wxx_wincore.h>
+#include <win32xx/wxx_menu.h>
 
 namespace command_runner::platform {
 

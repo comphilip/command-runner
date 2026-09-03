@@ -9,7 +9,7 @@
 #include <memory>
 
 #include <windows.h>
-#include <wxx_appcore.h>
+#include <win32xx/wxx_appcore.h>
 
 namespace command_runner {
 

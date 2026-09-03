@@ -15,6 +15,9 @@ if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     endif()
 endif()
 
+set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/ports" CACHE STRING
+    "vcpkg overlay ports directory")
+
 set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING
     "vcpkg triplet used for the native Windows build")
 
@@ -41,10 +44,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_path(WIL_INCLUDE_DIR NAMES wil/resource.h REQUIRED)
-set(WIN32XX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd/win32xx/include")
-if(NOT EXISTS "${WIN32XX_INCLUDE_DIR}/wxx_wincore.h")
-    message(FATAL_ERROR "Win32++ headers were not found at ${WIN32XX_INCLUDE_DIR}.")
-endif()
+find_path(WIN32XX_INCLUDE_DIR NAMES win32xx/wxx_wincore.h REQUIRED)
 
 set(COMMAND_RUNNER_SOURCES
     src/main.cpp

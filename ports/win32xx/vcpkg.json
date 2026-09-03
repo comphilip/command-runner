@@ -1,0 +1,7 @@
+{
+  "name": "win32xx",
+  "version-string": "7589d72",
+  "description": "Win32++ C++ library for building Windows desktop applications",
+  "homepage": "https://github.com/DavidNash2024/Win32xx",
+  "license": "MIT"
+}

@@ -6,10 +6,10 @@
 
 #include <windows.h>
 #include <shellapi.h>
-#include <wxx_wincore.h>
-#include <wxx_controls.h>
-#include <wxx_dialog.h>
-#include <wxx_stdcontrols.h>
+#include <win32xx/wxx_wincore.h>
+#include <win32xx/wxx_controls.h>
+#include <win32xx/wxx_dialog.h>
+#include <win32xx/wxx_stdcontrols.h>
 
 namespace command_runner::ui {
 
