@@ -105,6 +105,11 @@ BOOL Application::PreTranslateMessage(MSG& message) {
         handleDeferredMessage(message.message);
         return TRUE;
     }
+
+    if (mWindow != nullptr &&
+        IsDialogMessageW(mWindow->window(), &message) != FALSE) {
+        return TRUE;
+    }
     return CWinApp::PreTranslateMessage(message);
 }
 
