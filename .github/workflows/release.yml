@@ -41,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CommandRunner-${{ github.ref_name }}-symbols
-          path: out/build/Release/CommandRunner.pdb
+          path: out/Release/CommandRunner.pdb
           if-no-files-found: error
 
       - name: Extract release notes from changelog
@@ -58,7 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" `
-            "out\build\Release\CommandRunner.exe#CommandRunner.exe" `
+            "out\Release\CommandRunner.exe#CommandRunner.exe" `
             --verify-tag `
             --title "Command Runner ${{ github.ref_name }}" `
             --notes-file "release-notes.md"
