@@ -11,6 +11,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <wxx_listview.h>
+#include <wxx_rebar.h>
 #include <wxx_richedit.h>
 #include <wxx_stdcontrols.h>
 #include <wxx_toolbar.h>
@@ -84,11 +85,6 @@ private:
     bool mDragging{};
 };
 
-class ActionToolBar final : public Win32xx::CToolBar {
-protected:
-    void PreCreate(CREATESTRUCT& createStruct) override;
-};
-
 class MainWindow final : public Win32xx::CWnd,
                          public CommandListViewListener,
                          public SplitterListener {
@@ -115,24 +111,21 @@ private:
         STDERR,
     };
 
-    static constexpr int DEFAULT_DPI = 96;
     static constexpr int INITIAL_WINDOW_WIDTH = 900;
     static constexpr int INITIAL_WINDOW_HEIGHT = 620;
     static constexpr int MINIMUM_WINDOW_WIDTH = 640;
     static constexpr int MINIMUM_WINDOW_HEIGHT = 420;
-    static constexpr int ACTION_BAR_HEIGHT = 40;
     static constexpr int CONTENT_MARGIN = 8;
     static constexpr int CONTENT_TOP_PADDING = 4;
     static constexpr int CONTENT_BOTTOM_PADDING = 8;
     static constexpr int SPLITTER_HEIGHT = 6;
     static constexpr int INITIAL_SPLITTER_PERCENT = 40;
     static constexpr int MINIMUM_LIST_HEIGHT = 100;
-    static constexpr int OPTIONS_BAR_HEIGHT = 30;
-    static constexpr int LOG_LABEL_HEIGHT = 20;
     static constexpr int MINIMUM_WORKING_DIRECTORY_WIDTH = 180;
     static constexpr UINT PROCESS_EVENT_TIMER = 1;
     static constexpr UINT PROCESS_EVENT_INTERVAL_MILLISECONDS = 100;
 
+    static constexpr UINT IDC_ACTION_TOOLBAR = 1201;
     static constexpr int IDC_ADD = 1001;
     static constexpr int IDC_EDIT = 1002;
     static constexpr int IDC_DELETE = 1003;
@@ -154,6 +147,7 @@ private:
     [[nodiscard]] std::expected<void, DWORD> createControls();
     void destroyControls() noexcept;
     void layoutControls();
+    void updateActionToolBarMetrics();
     void updateListColumns();
     void updateLogFont();
     void updateLogOptions();
@@ -199,7 +193,8 @@ protected:
     void PreCreate(CREATESTRUCT& createStruct) override;
 
     HINSTANCE mInstance{};
-    ActionToolBar mActionBar;
+    Win32xx::CReBar mActionReBar;
+    Win32xx::CToolBar mActionToolBar;
     Win32xx::CStatic mOptionsBar;
     CommandListView mListView;
     Splitter mSplitter;
@@ -223,7 +218,6 @@ protected:
     std::wstring mActiveCommandId;
     LogView mLogView{LogView::COMBINED};
     int mSplitterPercent{INITIAL_SPLITTER_PERCENT};
-    UINT mCurrentDpi{DEFAULT_DPI};
     bool mUpdatingList{};
     bool mDisposed{};
 };

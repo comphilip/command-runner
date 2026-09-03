@@ -43,9 +43,6 @@ constexpr std::array<int, ACTION_BUTTON_COUNT>
         1006,
     };
 
-constexpr std::array<int, ACTION_BUTTON_COUNT>
-    ACTION_BUTTON_WIDTHS{62, 62, 74, 66, 66, 80};
-
 constexpr std::array<const wchar_t*, 6> COLUMN_LABELS{
     L"Name",
     L"Status",
@@ -70,6 +67,36 @@ constexpr COLORREF STDERR_COLOR = RGB(198, 40, 40);
 
 [[nodiscard]] std::wstring stateText(const RuntimeSnapshot& runtime) {
     return stateToString(runtime.mState);
+}
+
+[[nodiscard]] int fontHeight(HWND window, HFONT font) noexcept {
+    if (window == nullptr) {
+        return 0;
+    }
+
+    const HDC deviceContext = GetDC(window);
+    if (deviceContext == nullptr) {
+        return 0;
+    }
+
+    const HGDIOBJ previousFont = font == nullptr
+                                     ? nullptr
+                                     : SelectObject(deviceContext, font);
+    TEXTMETRIC textMetrics{};
+    const BOOL measured = GetTextMetrics(deviceContext, &textMetrics);
+    if (previousFont != nullptr && previousFont != HGDI_ERROR) {
+        SelectObject(deviceContext, previousFont);
+    }
+    ReleaseDC(window, deviceContext);
+    return measured != FALSE ? textMetrics.tmHeight : 0;
+}
+
+[[nodiscard]] int preferredButtonHeight(const Win32xx::CWnd& control,
+                                        int fallbackHeight) noexcept {
+    SIZE idealSize{};
+    const LRESULT result = control.SendMessage(
+        BCM_GETIDEALSIZE, 0, reinterpret_cast<LPARAM>(&idealSize));
+    return result != 0 && idealSize.cy > 0 ? idealSize.cy : fallbackHeight;
 }
 
 }  // namespace
@@ -288,12 +315,6 @@ void Splitter::PreCreate(CREATESTRUCT& createStruct) {
     createStruct.lpszName = L"Horizontal splitter";
 }
 
-void ActionToolBar::PreCreate(CREATESTRUCT& createStruct) {
-    CToolBar::PreCreate(createStruct);
-    createStruct.style &= ~TBSTYLE_FLAT;
-    createStruct.style |= WS_TABSTOP | TBSTYLE_LIST;
-}
-
 MainWindow::MainWindow(HINSTANCE instance,
                        ConfigData& configuration,
                        ConfigStore& store,
@@ -340,9 +361,9 @@ std::expected<void, DWORD> MainWindow::create(int showCommand) {
             return std::unexpected(error);
         }
 
-        mCurrentDpi = windowDpi(GetHwnd());
         updateControlFonts();
         updateLogFont();
+        updateActionToolBarMetrics();
         layoutControls();
         refreshRows();
         refreshLogs();
@@ -390,6 +411,10 @@ void MainWindow::PreCreate(CREATESTRUCT& createStruct) {
 
 std::expected<void, DWORD> MainWindow::createControls() {
     constexpr DWORD childStyle = WS_CHILD | WS_VISIBLE;
+    constexpr DWORD actionToolBarStyle =
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS |
+        WS_TABSTOP | TBSTYLE_TOOLTIPS | TBSTYLE_FLAT | TBSTYLE_LIST |
+        CCS_NODIVIDER | CCS_NORESIZE | CCS_NOPARENTALIGN;
 
     auto create = [this](auto& control,
                          DWORD exStyle,
@@ -411,26 +436,51 @@ std::expected<void, DWORD> MainWindow::createControls() {
     };
 
     try {
-        mActionBar.Create(GetHwnd());
+        mActionReBar.Create(GetHwnd());
+        const HMENU actionToolBarId = reinterpret_cast<HMENU>(
+            static_cast<INT_PTR>(IDC_ACTION_TOOLBAR));
+        mActionToolBar.CreateEx(0,
+                                TOOLBARCLASSNAME,
+                                nullptr,
+                                actionToolBarStyle,
+                                0,
+                                0,
+                                0,
+                                0,
+                                mActionReBar.GetHwnd(),
+                                actionToolBarId);
     } catch (const Win32xx::CException& exception) {
         const DWORD error = exception.GetError();
         return std::unexpected(error == ERROR_SUCCESS
                                    ? ERROR_FUNCTION_FAILED
                                    : error);
     }
-    if (!mActionBar.IsWindow()) {
+    if (!mActionReBar.IsWindow() || !mActionToolBar.IsWindow()) {
         return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
     }
     for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
-        if (mActionBar.AddButton(ACTION_BUTTON_IDS[index]) == FALSE ||
-            mActionBar.SetButtonText(ACTION_BUTTON_IDS[index],
-                                     ACTION_BUTTON_LABELS[index]) == FALSE ||
-            mActionBar.SetButtonWidth(
-                ACTION_BUTTON_IDS[index],
-                scaleForWindow(GetHwnd(), ACTION_BUTTON_WIDTHS[index])) == FALSE) {
+        if (mActionToolBar.AddButton(ACTION_BUTTON_IDS[index]) == FALSE ||
+            mActionToolBar.SetButtonText(ACTION_BUTTON_IDS[index],
+                                         ACTION_BUTTON_LABELS[index]) == FALSE) {
             return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
         }
     }
+
+    const Win32xx::CSize actionToolBarSize = mActionToolBar.GetMaxSize();
+    REBARBANDINFO actionBand{};
+    actionBand.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_ID |
+                       RBBIM_CHILDSIZE | RBBIM_SIZE;
+    actionBand.fStyle = RBBS_NOGRIPPER | RBBS_FIXEDSIZE;
+    actionBand.hwndChild = mActionToolBar.GetHwnd();
+    actionBand.wID = IDC_ACTION_TOOLBAR;
+    actionBand.cxMinChild = static_cast<UINT>(actionToolBarSize.cx);
+    actionBand.cyMinChild = static_cast<UINT>(actionToolBarSize.cy);
+    actionBand.cyMaxChild = static_cast<UINT>(actionToolBarSize.cy);
+    actionBand.cx = static_cast<UINT>(actionToolBarSize.cx);
+    if (mActionReBar.InsertBand(-1, actionBand) == FALSE) {
+        return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
+    }
+
     if (const auto result = create(mOptionsBar,
                                    0,
                                    L"Static",
@@ -556,7 +606,8 @@ void MainWindow::destroyControls() noexcept {
     mWrapLinesCheck.Destroy();
     mAutoScrollCheck.Destroy();
     mOptionsBar.Destroy();
-    mActionBar.Destroy();
+    mActionToolBar.Destroy();
+    mActionReBar.Destroy();
 }
 
 void MainWindow::layoutControls() {
@@ -567,8 +618,35 @@ void MainWindow::layoutControls() {
     const Win32xx::CRect client = GetClientRect();
     const int width = std::max(0, client.Width());
     const int height = std::max(0, client.Height());
+    const UINT dpi = windowDpi(GetHwnd());
+    const int controlPadding = GetSystemMetricsForDpi(SM_CYEDGE, dpi);
+    const int currentFontHeight = fontHeight(
+        GetHwnd(), static_cast<HFONT>(mUiFont));
+    const int fallbackControlHeight = currentFontHeight > 0
+                                          ? currentFontHeight + 2 * controlPadding
+                                          : GetSystemMetricsForDpi(SM_CYMENU, dpi);
+    const std::array<const Win32xx::CWnd*, 7> optionControls{
+        &mCombinedRadio,
+        &mStdoutRadio,
+        &mStderrRadio,
+        &mClearButton,
+        &mJumpLatestButton,
+        &mWrapLinesCheck,
+        &mAutoScrollCheck,
+    };
+    int optionControlHeight = fallbackControlHeight;
+    for (const Win32xx::CWnd* control : optionControls) {
+        optionControlHeight = std::max(
+            optionControlHeight,
+            preferredButtonHeight(*control, fallbackControlHeight));
+    }
+    const int optionsBarHeight = optionControlHeight + 2 * controlPadding;
+    const int logLabelHeight = std::max(
+        1, currentFontHeight + 2 * controlPadding);
+    const int actionBarHeight = std::max(
+        0,
+        static_cast<int>(mActionReBar.SendMessage(RB_GETBARHEIGHT, 0, 0)));
     const int margin = scaleForWindow(GetHwnd(), CONTENT_MARGIN);
-    const int actionBarHeight = scaleForWindow(GetHwnd(), ACTION_BAR_HEIGHT);
     const int contentTop = actionBarHeight +
                            scaleForWindow(GetHwnd(), CONTENT_TOP_PADDING);
     const int contentBottom = std::max(
@@ -581,8 +659,8 @@ void MainWindow::layoutControls() {
 
     const int minimumListHeight = scaleForWindow(
         GetHwnd(), MINIMUM_LIST_HEIGHT);
-    const int minimumBottomHeight = scaleForWindow(
-        GetHwnd(), OPTIONS_BAR_HEIGHT + LOG_LABEL_HEIGHT + 60);
+    const int minimumBottomHeight = optionsBarHeight + logLabelHeight +
+                                    scaleForWindow(GetHwnd(), 60);
     const int maximumTopHeight = std::max(
         0,
         availableHeight - minimumBottomHeight);
@@ -612,12 +690,12 @@ void MainWindow::layoutControls() {
         }
     };
 
-    position(mActionBar, 0, 0, width, actionBarHeight);
+    position(mActionReBar, 0, 0, width, actionBarHeight);
     position(mOptionsBar,
              margin,
              bottomY,
              contentWidth,
-             scaleForWindow(GetHwnd(), OPTIONS_BAR_HEIGHT));
+             optionsBarHeight);
     position(mListView, margin, contentTop, contentWidth, topHeight);
     position(mSplitter,
              margin,
@@ -625,7 +703,7 @@ void MainWindow::layoutControls() {
              contentWidth,
              splitterHeight);
 
-    const int optionsY = bottomY + scaleForWindow(GetHwnd(), 1);
+    const int optionsY = bottomY + controlPadding;
     int optionX = margin + scaleForWindow(GetHwnd(), 2);
     const int optionGap = scaleForWindow(GetHwnd(), 2);
     const std::array<std::pair<Win32xx::CWnd*, int>, 3> radios{
@@ -639,7 +717,7 @@ void MainWindow::layoutControls() {
                  optionX,
                  optionsY,
                  controlWidth,
-                 scaleForWindow(GetHwnd(), 26));
+                 optionControlHeight);
         optionX += controlWidth + optionGap;
     }
 
@@ -662,13 +740,13 @@ void MainWindow::layoutControls() {
         rightX -= rightGap;
     }
 
-    const int labelY = bottomY + scaleForWindow(GetHwnd(), OPTIONS_BAR_HEIGHT);
+    const int labelY = bottomY + optionsBarHeight;
     position(mLogLabel,
              margin,
              labelY,
              contentWidth,
-             scaleForWindow(GetHwnd(), LOG_LABEL_HEIGHT));
-    const int logY = labelY + scaleForWindow(GetHwnd(), LOG_LABEL_HEIGHT);
+             logLabelHeight);
+    const int logY = labelY + logLabelHeight;
     position(mLogEdit,
              margin,
              logY,
@@ -677,6 +755,28 @@ void MainWindow::layoutControls() {
 
     updateListColumns();
     RedrawWindow(RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+}
+
+void MainWindow::updateActionToolBarMetrics() {
+    if (!mActionToolBar.IsWindow() || !mActionReBar.IsWindow()) {
+        return;
+    }
+
+    const Win32xx::CSize actionToolBarSize = mActionToolBar.GetMaxSize();
+    if (actionToolBarSize.cx <= 0 || actionToolBarSize.cy <= 0) {
+        return;
+    }
+
+    REBARBANDINFO actionBand{};
+    actionBand.cbSize = sizeof(actionBand);
+    actionBand.fMask = RBBIM_CHILDSIZE | RBBIM_SIZE;
+    actionBand.cxMinChild = static_cast<UINT>(actionToolBarSize.cx);
+    actionBand.cyMinChild = static_cast<UINT>(actionToolBarSize.cy);
+    actionBand.cyMaxChild = static_cast<UINT>(actionToolBarSize.cy);
+    actionBand.cx = static_cast<UINT>(actionToolBarSize.cx);
+    mActionReBar.SendMessage(RB_SETBANDINFO,
+                             0,
+                             reinterpret_cast<LPARAM>(&actionBand));
 }
 
 void MainWindow::updateListColumns() {
@@ -718,7 +818,7 @@ void MainWindow::updateControlFonts() {
                VARIABLE_PITCH | FF_SWISS,
                L"Segoe UI");
     const HFONT font = static_cast<HFONT>(newFont);
-    mActionBar.SetFont(font, TRUE);
+    mActionToolBar.SetFont(font, TRUE);
     mOptionsBar.SetFont(font, TRUE);
     mListView.SetFont(font, TRUE);
     mLogLabel.SetFont(font, TRUE);
@@ -753,7 +853,7 @@ void MainWindow::updateLogOptions() {
 }
 
 void MainWindow::updateActionAvailability() {
-    if (!mActionBar.IsWindow()) {
+    if (!mActionToolBar.IsWindow()) {
         return;
     }
     std::vector<State> states;
@@ -783,8 +883,8 @@ void MainWindow::updateActionAvailability() {
         restartEnabled,
     };
     for (std::size_t index = 0; index < enabled.size(); ++index) {
-        mActionBar.EnableButton(ACTION_BUTTON_IDS[index],
-                                enabled[index] ? TRUE : FALSE);
+        mActionToolBar.EnableButton(ACTION_BUTTON_IDS[index],
+                                     enabled[index] ? TRUE : FALSE);
     }
     mClearButton.EnableWindow(mActiveCommandId.empty() ? FALSE : TRUE);
 }
@@ -933,7 +1033,9 @@ void MainWindow::savePreferences() {
 
 void MainWindow::setSplitterFromClientY(int clientY) {
     const Win32xx::CRect client = GetClientRect();
-    const int actionBarHeight = scaleForWindow(GetHwnd(), ACTION_BAR_HEIGHT);
+    const int actionBarHeight = std::max(
+        0,
+        static_cast<int>(mActionReBar.SendMessage(RB_GETBARHEIGHT, 0, 0)));
     const int contentTop = actionBarHeight +
                            scaleForWindow(GetHwnd(), CONTENT_TOP_PADDING);
     const int contentBottom = client.bottom -
@@ -1369,9 +1471,9 @@ LRESULT MainWindow::WndProc(UINT message,
                          *suggested,
                          SWP_NOZORDER | SWP_NOACTIVATE);
         }
-        mCurrentDpi = windowDpi(GetHwnd());
         updateControlFonts();
         updateLogFont();
+        updateActionToolBarMetrics();
         layoutControls();
         return 0;
     }
