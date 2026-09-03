@@ -288,6 +288,12 @@ void Splitter::PreCreate(CREATESTRUCT& createStruct) {
     createStruct.lpszName = L"Horizontal splitter";
 }
 
+void ActionToolBar::PreCreate(CREATESTRUCT& createStruct) {
+    CToolBar::PreCreate(createStruct);
+    createStruct.style &= ~TBSTYLE_FLAT;
+    createStruct.style |= WS_TABSTOP | TBSTYLE_LIST;
+}
+
 MainWindow::MainWindow(HINSTANCE instance,
                        ConfigData& configuration,
                        ConfigStore& store,
@@ -404,14 +410,26 @@ std::expected<void, DWORD> MainWindow::createControls() {
                            id);
     };
 
-    if (const auto result = create(mActionBar,
-                                   0,
-                                   L"Static",
-                                   nullptr,
-                                   childStyle,
-                                   0);
-        !result) {
-        return result;
+    try {
+        mActionBar.Create(GetHwnd());
+    } catch (const Win32xx::CException& exception) {
+        const DWORD error = exception.GetError();
+        return std::unexpected(error == ERROR_SUCCESS
+                                   ? ERROR_FUNCTION_FAILED
+                                   : error);
+    }
+    if (!mActionBar.IsWindow()) {
+        return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
+    }
+    for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
+        if (mActionBar.AddButton(ACTION_BUTTON_IDS[index]) == FALSE ||
+            mActionBar.SetButtonText(ACTION_BUTTON_IDS[index],
+                                     ACTION_BUTTON_LABELS[index]) == FALSE ||
+            mActionBar.SetButtonWidth(
+                ACTION_BUTTON_IDS[index],
+                scaleForWindow(GetHwnd(), ACTION_BUTTON_WIDTHS[index])) == FALSE) {
+            return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
+        }
     }
     if (const auto result = create(mOptionsBar,
                                    0,
@@ -461,18 +479,6 @@ std::expected<void, DWORD> MainWindow::createControls() {
                                    0);
         !result) {
         return result;
-    }
-
-    for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
-        if (const auto result = create(mActionButtons[index],
-                                       0,
-                                       L"Button",
-                                       ACTION_BUTTON_LABELS[index],
-                                       childStyle | WS_TABSTOP | BS_PUSHBUTTON,
-                                       ACTION_BUTTON_IDS[index]);
-            !result) {
-            return result;
-        }
     }
 
     const std::array<std::pair<Win32xx::CButton*, std::pair<LPCWSTR, UINT>>, 7>
@@ -542,9 +548,6 @@ void MainWindow::destroyControls() noexcept {
     mLogLabel.Destroy();
     mListView.Destroy();
     mSplitter.Destroy();
-    for (auto& button : mActionButtons) {
-        button.Destroy();
-    }
     mCombinedRadio.Destroy();
     mStdoutRadio.Destroy();
     mStderrRadio.Destroy();
@@ -621,18 +624,6 @@ void MainWindow::layoutControls() {
              splitterY,
              contentWidth,
              splitterHeight);
-
-    int actionX = margin;
-    for (std::size_t index = 0; index < mActionButtons.size(); ++index) {
-        const int buttonWidth = scaleForWindow(
-            GetHwnd(), ACTION_BUTTON_WIDTHS[index]);
-        position(mActionButtons[index],
-                 actionX,
-                 scaleForWindow(GetHwnd(), 6),
-                 buttonWidth,
-                 scaleForWindow(GetHwnd(), ACTION_BAR_BUTTON_HEIGHT));
-        actionX += buttonWidth;
-    }
 
     const int optionsY = bottomY + scaleForWindow(GetHwnd(), 1);
     int optionX = margin + scaleForWindow(GetHwnd(), 2);
@@ -731,9 +722,6 @@ void MainWindow::updateControlFonts() {
     mOptionsBar.SetFont(font, TRUE);
     mListView.SetFont(font, TRUE);
     mLogLabel.SetFont(font, TRUE);
-    for (auto& button : mActionButtons) {
-        button.SetFont(font, TRUE);
-    }
     mCombinedRadio.SetFont(font, TRUE);
     mStdoutRadio.SetFont(font, TRUE);
     mStderrRadio.SetFont(font, TRUE);
@@ -765,7 +753,7 @@ void MainWindow::updateLogOptions() {
 }
 
 void MainWindow::updateActionAvailability() {
-    if (!mActionButtons.front().IsWindow()) {
+    if (!mActionBar.IsWindow()) {
         return;
     }
     std::vector<State> states;
@@ -795,7 +783,8 @@ void MainWindow::updateActionAvailability() {
         restartEnabled,
     };
     for (std::size_t index = 0; index < enabled.size(); ++index) {
-        mActionButtons[index].EnableWindow(enabled[index] ? TRUE : FALSE);
+        mActionBar.EnableButton(ACTION_BUTTON_IDS[index],
+                                enabled[index] ? TRUE : FALSE);
     }
     mClearButton.EnableWindow(mActiveCommandId.empty() ? FALSE : TRUE);
 }

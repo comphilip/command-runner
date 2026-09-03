@@ -3,7 +3,6 @@
 #include "core/config_store.h"
 #include "core/process_manager.h"
 
-#include <array>
 #include <expected>
 #include <string>
 #include <string_view>
@@ -14,6 +13,7 @@
 #include <wxx_listview.h>
 #include <wxx_richedit.h>
 #include <wxx_stdcontrols.h>
+#include <wxx_toolbar.h>
 #include <wxx_wincore.h>
 
 namespace command_runner::ui {
@@ -84,6 +84,11 @@ private:
     bool mDragging{};
 };
 
+class ActionToolBar final : public Win32xx::CToolBar {
+protected:
+    void PreCreate(CREATESTRUCT& createStruct) override;
+};
+
 class MainWindow final : public Win32xx::CWnd,
                          public CommandListViewListener,
                          public SplitterListener {
@@ -116,7 +121,6 @@ private:
     static constexpr int MINIMUM_WINDOW_WIDTH = 640;
     static constexpr int MINIMUM_WINDOW_HEIGHT = 420;
     static constexpr int ACTION_BAR_HEIGHT = 40;
-    static constexpr int ACTION_BAR_BUTTON_HEIGHT = 28;
     static constexpr int CONTENT_MARGIN = 8;
     static constexpr int CONTENT_TOP_PADDING = 4;
     static constexpr int CONTENT_BOTTOM_PADDING = 8;
@@ -129,7 +133,6 @@ private:
     static constexpr UINT PROCESS_EVENT_TIMER = 1;
     static constexpr UINT PROCESS_EVENT_INTERVAL_MILLISECONDS = 100;
 
-    static constexpr int ACTION_BUTTON_COUNT = 6;
     static constexpr int IDC_ADD = 1001;
     static constexpr int IDC_EDIT = 1002;
     static constexpr int IDC_DELETE = 1003;
@@ -196,13 +199,12 @@ protected:
     void PreCreate(CREATESTRUCT& createStruct) override;
 
     HINSTANCE mInstance{};
-    Win32xx::CStatic mActionBar;
+    ActionToolBar mActionBar;
     Win32xx::CStatic mOptionsBar;
     CommandListView mListView;
     Splitter mSplitter;
     Win32xx::CStatic mLogLabel;
     Win32xx::CRichEdit mLogEdit;
-    std::array<Win32xx::CButton, ACTION_BUTTON_COUNT> mActionButtons;
     Win32xx::CButton mCombinedRadio;
     Win32xx::CButton mStdoutRadio;
     Win32xx::CButton mStderrRadio;
