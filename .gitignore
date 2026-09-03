@@ -1,7 +1,3 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-build/
-dist/
-*.log
+out/
+CMakeUserPresets.json
+3rd/

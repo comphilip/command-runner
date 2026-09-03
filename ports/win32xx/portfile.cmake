@@ -1,0 +1,13 @@
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO DavidNash2024/Win32xx
+    REF 7589d72f7b8f7f6e9bc810ce930c038fcbfe4685
+    SHA512 e67c578aedcd896b0973b9ab770ecfc1bfa230936a172a006a47ee55ed6f90b29aa51b0358402369bc1d914b41464d66ec215d9287068d1801bb3cdb833675d3
+)
+
+file(INSTALL
+    "${SOURCE_PATH}/include/"
+    DESTINATION "${CURRENT_PACKAGES_DIR}/include/win32xx/"
+)
+
+vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")

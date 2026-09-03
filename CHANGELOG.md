@@ -2,6 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.2.0
+* Migration to win32
+
 ## v0.1.5
 * change to version 0.1.5
 * add Shell option for commands that need shell startup behavior

@@ -1,0 +1,19 @@
+{
+  "name": "command-runner",
+  "version-semver": "0.1.5",
+  "description": "Native Windows command runner",
+  "homepage": "https://github.com/microsoft/vcpkg",
+  "license": "MIT",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
+  "dependencies": [
+    {
+      "name": "nlohmann-json"
+    },
+    {
+      "name": "wil"
+    },
+    {
+      "name": "win32xx"
+    }
+  ]
+}

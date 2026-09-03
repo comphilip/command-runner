@@ -21,49 +21,75 @@ in real time. Each log view retains up to the latest 1,000 lines.
 Commands do not support interactive stdin. To view output from a Python
 subprocess in real time, use `python -u`.
 
-## Running in a Windows Development Environment
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py
-```
-
-If you use the Microsoft Store version of Python, you can replace `py -3` with
-`python`.
-
 ## Building on Windows
 
-After copying the entire directory to Windows, double-click
-`build-windows.bat`, or run:
+Use a Visual Studio 2022/2026 x64 developer shell with CMake and vcpkg
+available. Set `VCPKG_ROOT` to the vcpkg checkout, then run:
 
 ```powershell
 .\build-windows.ps1
 ```
 
-The output is located at:
+The script configures and builds the native C++23 Release preset, runs the
+Windows regression tests, checks the PE architecture/imports and version
+metadata, and reports the unsigned artifact size. The output is located at:
 
 ```text
-dist\CommandRunner.exe
+out\build\windows-x64-release\Release\CommandRunner.exe
 ```
 
-The current spec produces a single-file application. If UPX is installed on the
-Windows build machine, PyInstaller further compresses supported binary
-components. PyInstaller is not a cross-compiler, so the production Windows EXE
-should be built on Windows (or with Windows Python under Wine). Because this
-project uses the system tray and Job Objects, always test the final build on a
-real Windows 11 system.
+Use `-Configuration Debug` for a debug build or `-SkipTests` when iterating on
+the executable. Release signing is opt-in and uses a certificate in the
+current user's certificate store:
+
+```powershell
+.\build-windows.ps1 -CertificateThumbprint "..."
+```
 
 The description, file version, product name, product version, copyright, and
-language shown in Windows file properties are defined in `version_info.txt`.
-When releasing a new version, update `filevers`, `prodvers`, `FileVersion`, and
-`ProductVersion` together.
+language shown in Windows file properties are defined in
+`resources/CommandRunner.rc`. Update the resource version together with the
+Git tag and `CHANGELOG.md` entry.
+
+## Native C++ migration (phase five)
+
+The native migration uses C++23, CMake, vcpkg manifest mode, MSVC, WIL, and
+nlohmann/json. Phases three and four add the native main window with an action
+bar, native add/edit/delete and close-confirmation dialogs, a Win32 system-tray
+icon, and
+multi-select ListView, draggable vertical splitter, log filtering controls,
+RichEdit output, keyboard navigation, and DPI-aware responsive layout. The
+Windows process manager from phase two continues to provide one shared IOCP
+worker for stdout/stderr capture, Job Object process-tree cleanup, and direct
+or shell command execution. The checked-in preset targets the installed Visual
+Studio 18 toolset; a Visual Studio 2022 installation can use the same CMake
+targets after selecting its generator/toolset. Set `VCPKG_ROOT` to a vcpkg
+checkout, then configure and build the x64 Debug preset:
+
+```powershell
+cmake --preset windows-x64-debug
+cmake --build --preset windows-x64-debug
+ctest --test-dir out/build/windows-x64-debug -C Debug --output-on-failure
+```
+
+`CommandRunner.sln` is provided for Visual Studio users. The application state
+survives repeated main-window destruction and recreation while minimized to the
+system tray. `scripts/verify-release.ps1` also checks that a release does not
+accidentally depend on Python, the .NET runtime, or a dynamic MSVC runtime.
+
+Phase 5 compatibility validation must still be completed on a real Windows 11
+x64 machine: move the window between 100%, 125%, 150%, 175%, and 200% DPI
+monitors; exercise keyboard access keys and a screen reader; restart Explorer
+and confirm the tray icon returns; and inspect the signed artifact with the
+organization's antivirus submission process. These checks require an
+interactive Windows desktop and are not replaced by the headless CI tests.
 
 ## Automated GitHub Releases
 
-When a tag matching `v*` is pushed, GitHub Actions installs the dependencies on
-a Windows VM, builds `CommandRunner.exe` with PyInstaller, creates a GitHub
-Release with the same name, and uploads the EXE.
+When a tag matching `v*` is pushed, GitHub Actions configures the native x64
+Release preset, runs the C++ regression tests, verifies the PE artifact, saves
+the PDB as a build artifact, creates a GitHub Release with the same name, and
+uploads the EXE.
 
 Before publishing, add a level-two heading to `CHANGELOG.md` that exactly
 matches the tag:
@@ -98,15 +124,6 @@ redirections, and `&&`. “Run directly” is suitable for ordinary executables 
 their arguments. Commands run with the current user's permissions. Do not
 import and execute untrusted configurations.
 
-Minimizing the application requires `pystray` and Pillow. Both are listed in
-`requirements.txt`.
-
-## Validation on Linux
-
-Linux can validate configuration handling, logging, and POSIX process-group
-cleanup, but it cannot validate the Windows system tray or Job Objects:
-
-```bash
-python3 -m pytest
-python3 -m compileall app.py command_runner
-```
+The native executable has no Python, .NET, or third-party GUI runtime
+dependency. Windows tray, DPI, Job Object, and accessibility behavior must be
+validated on Windows 11 x64.

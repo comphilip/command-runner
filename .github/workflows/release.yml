@@ -17,26 +17,32 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Enable MSVC tools
+        uses: ilammy/msvc-dev-cmd@v1
         with:
-          python-version: "3.13"
-          architecture: "x64"
-          cache: "pip"
+          arch: x64
 
-      - name: Install dependencies
+      - name: Configure native Release build
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-dev.txt
+          cmake --preset windows-x64-release
 
-      - name: Build single-file Windows executable
+      - name: Build native Release executable
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean CommandRunner.spec
-          if (-not (Test-Path "dist\CommandRunner.exe")) {
-            throw "PyInstaller did not create dist\CommandRunner.exe"
-          }
+          cmake --build --preset windows-x64-release --parallel
+
+      - name: Run native regression tests
+        shell: pwsh
+        run: |
+          ctest --preset windows-x64-release --output-on-failure
+
+      - name: Save PDB for crash analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: CommandRunner-${{ github.ref_name }}-symbols
+          path: out/build/Release/CommandRunner.pdb
+          if-no-files-found: error
 
       - name: Extract release notes from changelog
         shell: pwsh
@@ -52,7 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" `
-            "dist\CommandRunner.exe#CommandRunner.exe" `
+            "out\build\Release\CommandRunner.exe#CommandRunner.exe" `
             --verify-tag `
             --title "Command Runner ${{ github.ref_name }}" `
             --notes-file "release-notes.md"
