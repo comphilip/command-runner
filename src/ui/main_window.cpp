@@ -69,36 +69,6 @@ constexpr COLORREF STDERR_COLOR = RGB(198, 40, 40);
     return stateToString(runtime.mState);
 }
 
-[[nodiscard]] int fontHeight(HWND window, HFONT font) noexcept {
-    if (window == nullptr) {
-        return 0;
-    }
-
-    const HDC deviceContext = GetDC(window);
-    if (deviceContext == nullptr) {
-        return 0;
-    }
-
-    const HGDIOBJ previousFont = font == nullptr
-                                     ? nullptr
-                                     : SelectObject(deviceContext, font);
-    TEXTMETRIC textMetrics{};
-    const BOOL measured = GetTextMetrics(deviceContext, &textMetrics);
-    if (previousFont != nullptr && previousFont != HGDI_ERROR) {
-        SelectObject(deviceContext, previousFont);
-    }
-    ReleaseDC(window, deviceContext);
-    return measured != FALSE ? textMetrics.tmHeight : 0;
-}
-
-[[nodiscard]] int preferredButtonHeight(const Win32xx::CWnd& control,
-                                        int fallbackHeight) noexcept {
-    SIZE idealSize{};
-    const LRESULT result = control.SendMessage(
-        BCM_GETIDEALSIZE, 0, reinterpret_cast<LPARAM>(&idealSize));
-    return result != 0 && idealSize.cy > 0 ? idealSize.cy : fallbackHeight;
-}
-
 }  // namespace
 
 LRESULT CommandListView::WndProc(UINT message,
@@ -620,7 +590,7 @@ void MainWindow::layoutControls() {
     const int height = std::max(0, client.Height());
     const UINT dpi = windowDpi(GetHwnd());
     const int controlPadding = GetSystemMetricsForDpi(SM_CYEDGE, dpi);
-    const int currentFontHeight = fontHeight(
+    const int currentFontHeight = measureFontHeight(
         GetHwnd(), static_cast<HFONT>(mUiFont));
     const int fallbackControlHeight = currentFontHeight > 0
                                           ? currentFontHeight + 2 * controlPadding
@@ -636,9 +606,11 @@ void MainWindow::layoutControls() {
     };
     int optionControlHeight = fallbackControlHeight;
     for (const Win32xx::CWnd* control : optionControls) {
+        const SIZE idealSize = preferredButtonSize(*control);
         optionControlHeight = std::max(
             optionControlHeight,
-            preferredButtonHeight(*control, fallbackControlHeight));
+            idealSize.cy > 0 ? static_cast<int>(idealSize.cy)
+                             : fallbackControlHeight);
     }
     const int optionsBarHeight = optionControlHeight + 2 * controlPadding;
     const int logLabelHeight = std::max(

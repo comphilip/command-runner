@@ -13,6 +13,11 @@ namespace command_runner::ui {
 [[nodiscard]] UINT windowDpi(HWND window) noexcept;
 [[nodiscard]] int scaleForDpi(UINT dpi, int value) noexcept;
 [[nodiscard]] int scaleForWindow(HWND window, int value) noexcept;
+[[nodiscard]] int measureFontHeight(HWND window, HFONT font) noexcept;
+[[nodiscard]] int measureControlTextWidth(
+    const Win32xx::CWnd& control, HFONT font) noexcept;
+[[nodiscard]] SIZE preferredButtonSize(
+    const Win32xx::CWnd& control) noexcept;
 
 void createFont(Win32xx::CFont& font,
                 HWND referenceWindow,

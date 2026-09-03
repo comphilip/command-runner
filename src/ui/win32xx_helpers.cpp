@@ -3,6 +3,8 @@
 #include <CommCtrl.h>
 #include <Richedit.h>
 
+#include <string>
+
 namespace command_runner::ui {
 
 DWORD lastWin32ErrorOr(DWORD fallback) noexcept {
@@ -23,6 +25,78 @@ int scaleForDpi(UINT dpi, int value) noexcept {
 
 int scaleForWindow(HWND window, int value) noexcept {
     return scaleForDpi(windowDpi(window), value);
+}
+
+int measureFontHeight(HWND window, HFONT font) noexcept {
+    if (window == nullptr) {
+        return 0;
+    }
+
+    const HDC deviceContext = GetDC(window);
+    if (deviceContext == nullptr) {
+        return 0;
+    }
+
+    const HGDIOBJ previousFont = font == nullptr
+                                     ? nullptr
+                                     : SelectObject(deviceContext, font);
+    TEXTMETRIC textMetrics{};
+    const BOOL measured = GetTextMetrics(deviceContext, &textMetrics);
+    if (previousFont != nullptr && previousFont != HGDI_ERROR) {
+        SelectObject(deviceContext, previousFont);
+    }
+    ReleaseDC(window, deviceContext);
+    return measured != FALSE ? textMetrics.tmHeight : 0;
+}
+
+int measureControlTextWidth(const Win32xx::CWnd& control,
+                            HFONT font) noexcept {
+    const HWND window = control.GetHwnd();
+    if (window == nullptr) {
+        return 0;
+    }
+
+    const int textLength = GetWindowTextLengthW(window);
+    if (textLength <= 0) {
+        return 0;
+    }
+    std::wstring text(static_cast<std::size_t>(textLength) + 1, L'\0');
+    const int copied = GetWindowTextW(window,
+                                      text.data(),
+                                      textLength + 1);
+    if (copied <= 0) {
+        return 0;
+    }
+
+    const HDC deviceContext = GetDC(window);
+    if (deviceContext == nullptr) {
+        return 0;
+    }
+
+    const HGDIOBJ previousFont = font == nullptr
+                                     ? nullptr
+                                     : SelectObject(deviceContext, font);
+    SIZE textSize{};
+    const BOOL measured = GetTextExtentPoint32W(deviceContext,
+                                                text.c_str(),
+                                                copied,
+                                                &textSize);
+    if (previousFont != nullptr && previousFont != HGDI_ERROR) {
+        SelectObject(deviceContext, previousFont);
+    }
+    ReleaseDC(window, deviceContext);
+    return measured != FALSE ? textSize.cx : 0;
+}
+
+SIZE preferredButtonSize(const Win32xx::CWnd& control) noexcept {
+    SIZE idealSize{};
+    if (control.IsWindow() &&
+        control.SendMessage(BCM_GETIDEALSIZE,
+                            0,
+                            reinterpret_cast<LPARAM>(&idealSize)) != 0) {
+        return idealSize;
+    }
+    return {};
 }
 
 void createFont(Win32xx::CFont& font,

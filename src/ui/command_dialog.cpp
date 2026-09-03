@@ -18,19 +18,10 @@ namespace command_runner::ui {
 namespace {
 
 constexpr int DIALOG_MINIMUM_WIDTH = 430;
-constexpr int DIALOG_LABEL_WIDTH = 104;
-constexpr int DIALOG_INPUT_LEFT = 120;
 constexpr int DIALOG_MARGIN = 8;
-constexpr int DIALOG_BUTTON_HEIGHT = 20;
-constexpr int DIALOG_LABEL_HEIGHT = 14;
-constexpr int DIALOG_INPUT_HEIGHT = 20;
-constexpr int DIALOG_BROWSE_HEIGHT = 22;
-constexpr int DIALOG_BROWSE_WIDTH = 70;
-constexpr int DIALOG_COMMAND_LINE_TOP = 114;
 constexpr int DIALOG_COMMAND_LINE_MINIMUM_HEIGHT = 40;
 constexpr int DIALOG_COMMAND_LINE_BOTTOM_GAP = 8;
 constexpr int DIALOG_BUTTON_GAP = 6;
-constexpr int DIALOG_BUTTON_WIDTH = 52;
 
 void positionControl(const Win32xx::CWnd& control,
                      int x,
@@ -297,31 +288,65 @@ void CommandDialog::layoutControls() {
     const Win32xx::CRect client = GetClientRect();
     const int width = std::max(0, client.Width());
     const int height = std::max(0, client.Height());
+    const UINT dpi = windowDpi(GetHwnd());
     const int margin = scaleForWindow(GetHwnd(), DIALOG_MARGIN);
-    const int labelWidth = scaleForWindow(GetHwnd(), DIALOG_LABEL_WIDTH);
-    const int labelHeight = scaleForWindow(GetHwnd(), DIALOG_LABEL_HEIGHT);
-    const int inputLeft = scaleForWindow(GetHwnd(), DIALOG_INPUT_LEFT);
-    const int inputHeight = scaleForWindow(GetHwnd(), DIALOG_INPUT_HEIGHT);
-    const int browseWidth = scaleForWindow(GetHwnd(), DIALOG_BROWSE_WIDTH);
-    const int browseHeight = scaleForWindow(GetHwnd(), DIALOG_BROWSE_HEIGHT);
+    const int edge = GetSystemMetricsForDpi(SM_CYEDGE, dpi);
+    const HFONT font = static_cast<HFONT>(mUiFont);
+    const int currentFontHeight = measureFontHeight(GetHwnd(), font);
+    const int labelHeight = std::max(1, currentFontHeight);
+    const int inputHeight = std::max(1, currentFontHeight + 2 * edge);
+
+    const std::array<const Win32xx::CWnd*, 4> labels{
+        &mNameLabel,
+        &mWorkingDirectoryLabel,
+        &mEncodingLabel,
+        &mCommandLineLabel,
+    };
+    int labelWidth = 0;
+    for (const Win32xx::CWnd* label : labels) {
+        labelWidth = std::max(labelWidth,
+                              measureControlTextWidth(*label, font));
+    }
+    labelWidth = std::max(1, labelWidth);
+    const int inputLeft = margin + labelWidth + margin;
+
+    const auto buttonSize = [font, edge, inputHeight](
+                                const Win32xx::CWnd& control) {
+        const SIZE idealSize = preferredButtonSize(control);
+        const int textWidth = measureControlTextWidth(control, font);
+        return SIZE{
+            idealSize.cx > 0 ? idealSize.cx
+                             : std::max(1, textWidth + 2 * edge),
+            idealSize.cy > 0 ? idealSize.cy : inputHeight,
+        };
+    };
+    const SIZE browseSize = buttonSize(mBrowse);
+    const SIZE saveSize = buttonSize(mSave);
+    const SIZE cancelSize = buttonSize(mCancel);
+    const int browseWidth = browseSize.cx;
+    const int browseHeight = browseSize.cy;
+    const int buttonWidth = std::max(saveSize.cx, cancelSize.cx);
+    const int buttonHeight = std::max(saveSize.cy, cancelSize.cy);
+    const int buttonGap = scaleForWindow(GetHwnd(), DIALOG_BUTTON_GAP);
+
+    const int encodingTop = scaleForWindow(GetHwnd(), 60);
+    const int optionTop = encodingTop + inputHeight + buttonGap;
+    const SIZE shellSize = buttonSize(mShell);
+    const SIZE autoStartSize = buttonSize(mAutoStart);
+    const int optionHeight = std::max(shellSize.cy, autoStartSize.cy);
+    const int commandLineTop = optionTop + optionHeight + margin;
     const int inputWidth = std::max(
         scaleForWindow(GetHwnd(), 80),
         width - inputLeft - margin);
     const int workingWidth = std::max(
         scaleForWindow(GetHwnd(), 80),
         width - inputLeft - margin - browseWidth -
-            scaleForWindow(GetHwnd(), DIALOG_BUTTON_GAP));
-    const int commandLineTop = scaleForWindow(
-        GetHwnd(), DIALOG_COMMAND_LINE_TOP);
-    const int buttonHeight = scaleForWindow(
-        GetHwnd(), DIALOG_BUTTON_HEIGHT);
+            buttonGap);
     const int buttonY = std::max(0, height - margin - buttonHeight);
     const int commandLineHeight = std::max(
         scaleForWindow(GetHwnd(), DIALOG_COMMAND_LINE_MINIMUM_HEIGHT),
         buttonY - commandLineTop -
             scaleForWindow(GetHwnd(), DIALOG_COMMAND_LINE_BOTTOM_GAP));
-    const int buttonWidth = scaleForWindow(GetHwnd(), DIALOG_BUTTON_WIDTH);
-    const int buttonGap = scaleForWindow(GetHwnd(), DIALOG_BUTTON_GAP);
 
     positionControl(mNameLabel,
                     margin,
@@ -345,7 +370,8 @@ void CommandDialog::layoutControls() {
                     inputHeight);
     positionControl(mBrowse,
                     width - margin - browseWidth,
-                    scaleForWindow(GetHwnd(), 33),
+                    scaleForWindow(GetHwnd(), 34) +
+                        (inputHeight - browseHeight) / 2,
                     browseWidth,
                     browseHeight);
     positionControl(mEncodingLabel,
@@ -360,17 +386,17 @@ void CommandDialog::layoutControls() {
                     scaleForWindow(GetHwnd(), 100));
     positionControl(mShell,
                     inputLeft,
-                    scaleForWindow(GetHwnd(), 87),
-                    scaleForWindow(GetHwnd(), 80),
-                    inputHeight);
+                    optionTop,
+                    shellSize.cx,
+                    optionHeight);
     positionControl(mAutoStart,
-                    inputLeft + scaleForWindow(GetHwnd(), 90),
-                    scaleForWindow(GetHwnd(), 87),
-                    scaleForWindow(GetHwnd(), 100),
-                    inputHeight);
+                    inputLeft + shellSize.cx + buttonGap,
+                    optionTop,
+                    autoStartSize.cx,
+                    optionHeight);
     positionControl(mCommandLineLabel,
                     margin,
-                    scaleForWindow(GetHwnd(), 116),
+                    commandLineTop,
                     labelWidth,
                     labelHeight);
     positionControl(mCommandLine,
