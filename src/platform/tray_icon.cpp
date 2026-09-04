@@ -58,7 +58,7 @@ std::expected<void, DWORD> TrayIcon::create() {
     mNotifyData.cbSize = sizeof(NOTIFYICONDATAW);
     mNotifyData.hWnd = GetHwnd();
     mNotifyData.uID = 1;
-    mNotifyData.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    mNotifyData.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
     mNotifyData.uCallbackMessage = TRAY_CALLBACK_MESSAGE;
     mNotifyData.hIcon = mIcon;
     constexpr wchar_t TIP[] = L"Command Runner";
