@@ -1,7 +1,6 @@
 #include "ui/win32xx_helpers.h"
 
 #include <CommCtrl.h>
-#include <Richedit.h>
 
 #include <string>
 
@@ -126,11 +125,6 @@ void createFont(Win32xx::CFont& font,
 void setListViewUnicodeFormat(const Win32xx::CWnd& control) noexcept {
     // Win32++ has no dedicated wrapper for LVM_SETUNICODEFORMAT.
     control.SendMessage(LVM_SETUNICODEFORMAT, TRUE, 0);
-}
-
-void scrollRichEditCaret(const Win32xx::CWnd& control) noexcept {
-    // CRichEdit exposes selection and line scrolling, but not EM_SCROLLCARET.
-    control.SendMessage(EM_SCROLLCARET, 0, 0);
 }
 
 }  // namespace command_runner::ui

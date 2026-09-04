@@ -26,7 +26,6 @@ void createFont(Win32xx::CFont& font,
                 LPCWSTR faceName);
 
 void setListViewUnicodeFormat(const Win32xx::CWnd& control) noexcept;
-void scrollRichEditCaret(const Win32xx::CWnd& control) noexcept;
 
 template <typename Control>
 [[nodiscard]] std::expected<void, DWORD> createChild(

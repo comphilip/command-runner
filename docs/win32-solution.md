@@ -114,7 +114,7 @@ MainFrame
     │   └── CListView，填满上窗格
     └── LogPane
         ├── OptionsBar，固定高度
-        └── CRichEdit，填满剩余区域
+        └── CEdit，填满剩余区域
 ```
 
 布局对应关系：
@@ -124,7 +124,7 @@ MainFrame
 | 顶部按钮栏 | Button 容器或 Toolbar |
 | `ttk.PanedWindow` | `CSplitter` |
 | `ttk.Treeview` | `CListView`，Report 模式 |
-| `tk.Text` | `CRichEdit` |
+| `tk.Text` | `CEdit` |
 | 单选按钮 | 原生 Radio Button |
 | 复选框 | 原生 Check Box |
 | 信息和确认框 | MessageBox 或 Task Dialog |
@@ -136,7 +136,7 @@ MainFrame
 - Splitter 填满 ActionBar 以下区域。
 - 上下窗格初始比例为 2:3，即分隔位置约为可用高度的 40%。
 - 用户拖动分隔条后保留用户选择的位置或比例。
-- ListView 和 RichEdit 始终填满各自窗格。
+- ListView 和 CEdit 始终填满各自窗格。
 - 设置合理的最小窗口尺寸，防止控件重叠。
 
 ListView 保留原版的鼠标和键盘行为：
@@ -174,7 +174,7 @@ Auto-scroll | Word wrap | Jump to Latest | Clear
 
 对话框包含 Name、Working Directory、Browse、Command Line、Output Encoding、Shell、Auto Start、Save 和 Cancel。Shell 默认关闭，表示直接执行；Auto Start 默认关闭。
 
-Command Line 使用支持多行、自动换行和垂直滚动条的原生 Edit/RichEdit 控件，初始高度约四行。Enter 插入换行，Ctrl+Enter 保存，Escape 取消。配置中保留用户输入的多行文本，但真正启动命令时必须将 `CRLF`、单独的 `CR` 和单独的 `LF` 分别替换为一个空格，不能把换行直接交给 shell 或进程解析器。
+Command Line 使用支持多行、自动换行和垂直滚动条的原生 Edit 控件，初始高度约四行。Enter 插入换行，Ctrl+Enter 保存，Escape 取消。配置中保留用户输入的多行文本，但真正启动命令时必须将 `CRLF`、单独的 `CR` 和单独的 `LF` 分别替换为一个空格，不能把换行直接交给 shell 或进程解析器。
 
 对话框允许横向调整大小并保持高度固定，内容区宽度必须始终与客户区同步；窗口变宽时 Name、Working Directory 和 Command Line 一起变宽，不能只放大外框而留下固定宽度的内容。基础锚点如下：
 
@@ -208,7 +208,7 @@ int ScaleForWindow(HWND window, int value)
 
 Win32++ 的 `CResizer` 历史上在跨不同 DPI 显示器移动对话框时需要额外处理。主窗口应采用 Frame 加程序化布局；对话框在 `WM_DPICHANGED` 后重新初始化 Resizer，必要时重建子对话框。[相关讨论](https://sourceforge.net/p/win32-framework/support-requests/9/)
 
-继续使用 Windows 原生 Button、ListView、RichEdit、Radio Button 和 Check Box，以保留键盘导航、焦点、系统主题和 UI Automation/屏幕阅读器兼容性。不要使用 Dear ImGui 或自绘控件替代主要交互控件。
+继续使用 Windows 原生 Button、ListView、Edit、Radio Button 和 Check Box，以保留键盘导航、焦点、系统主题和 UI Automation/屏幕阅读器兼容性。不要使用 Dear ImGui 或自绘控件替代主要交互控件。
 
 所有可操作控件都必须有键盘访问路径和可见焦点。界面及错误消息使用英文；新增字符串时同时检查 Access key 冲突。
 
@@ -346,7 +346,7 @@ Release 构建建议：
 - Win32++ 只引入项目需要的头文件。
 - WIL 可通过 NuGet、vcpkg 或固定版本源码使用。
 - 记录每个依赖的版本、许可证和更新步骤。
-- 升级 Win32++ 时重点测试 RichEdit、CResizer、高 DPI 和托盘行为。
+- 升级 Win32++ 时重点测试 Edit、CResizer、高 DPI 和托盘行为。
 
 ## 12. 迁移步骤
 
@@ -366,7 +366,7 @@ Release 构建建议：
 
 ### 阶段三：主窗口
 
-- 实现 ActionBar、ListView、Splitter、OptionsBar 和 RichEdit。
+- 实现 ActionBar、ListView、Splitter、OptionsBar 和 CEdit。
 - 实现选择、多选、第 5.1 节列出的完整键盘操作、日志过滤和自动滚动。
 - 实现窗口最小尺寸、列宽和自适应布局。
 
