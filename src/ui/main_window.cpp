@@ -431,13 +431,16 @@ std::expected<void, DWORD> MainWindow::createControls() {
         return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
     }
 
-    const auto actionImages = createToolbarImageList(
+    const auto actionImages = createToolbarImageLists(
         mInstance, GetDpiForWindow(GetHwnd()));
     if (!actionImages) {
         return std::unexpected(actionImages.error());
     }
-    mActionToolBar.SetImageList(actionImages->GetHandle());
-    mActionImages = std::move(*actionImages);
+    mActionToolBar.SetImageList(actionImages->mNormalImages.GetHandle());
+    mActionToolBar.SetDisableImageList(
+        actionImages->mDisabledImages.GetHandle());
+    mActionImages = std::move(actionImages->mNormalImages);
+    mActionDisabledImages = std::move(actionImages->mDisabledImages);
 
     for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
         if (mActionToolBar.AddButton(ACTION_BUTTON_IDS[index],
@@ -770,12 +773,15 @@ void MainWindow::updateActionToolBarImages(UINT dpi) {
     }
 
     try {
-        const auto actionImages = createToolbarImageList(mInstance, dpi);
+        const auto actionImages = createToolbarImageLists(mInstance, dpi);
         if (!actionImages) {
             return;
         }
-        mActionToolBar.SetImageList(actionImages->GetHandle());
-        mActionImages = std::move(*actionImages);
+        mActionToolBar.SetImageList(actionImages->mNormalImages.GetHandle());
+        mActionToolBar.SetDisableImageList(
+            actionImages->mDisabledImages.GetHandle());
+        mActionImages = std::move(actionImages->mNormalImages);
+        mActionDisabledImages = std::move(actionImages->mDisabledImages);
     } catch (const Win32xx::CException&) {
         // Keep the previous image list if a DPI-specific list cannot be built.
     } catch (const std::bad_alloc&) {

@@ -197,6 +197,7 @@ protected:
     Win32xx::CReBar mActionReBar;
     Win32xx::CToolBar mActionToolBar;
     Win32xx::CImageList mActionImages;
+    Win32xx::CImageList mActionDisabledImages;
     Win32xx::CStatic mOptionsBar;
     CommandListView mListView;
     Splitter mSplitter;

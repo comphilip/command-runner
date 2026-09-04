@@ -303,7 +303,7 @@ struct Direct2DRenderer final {
 
 }  // namespace
 
-std::expected<Win32xx::CImageList, DWORD> createToolbarImageList(
+std::expected<ToolbarImageLists, DWORD> createToolbarImageLists(
     HINSTANCE instance,
     UINT dpi) {
     if (instance == nullptr) {
@@ -328,12 +328,12 @@ std::expected<Win32xx::CImageList, DWORD> createToolbarImageList(
         return std::unexpected(renderer.error());
     }
 
-    Win32xx::CImageList images;
-    images.Create(pixelSize,
-                  pixelSize,
-                  ILC_COLOR32 | ILC_MASK,
-                  static_cast<int>(TOOLBAR_RESOURCE_COUNT),
-                  0);
+    ToolbarImageLists imageLists;
+    imageLists.mNormalImages.Create(pixelSize,
+                                    pixelSize,
+                                    ILC_COLOR32 | ILC_MASK,
+                                    static_cast<int>(TOOLBAR_RESOURCE_COUNT),
+                                    0);
     for (const WORD resourceId : TOOLBAR_RESOURCES) {
         auto bitmap = renderSvg(*renderer,
                                 instance,
@@ -342,12 +342,17 @@ std::expected<Win32xx::CImageList, DWORD> createToolbarImageList(
         if (!bitmap) {
             return std::unexpected(bitmap.error());
         }
-        if (images.Add(bitmap->get()) < 0) {
+        if (imageLists.mNormalImages.Add(bitmap->get()) < 0) {
             return std::unexpected(lastErrorOr(ERROR_FUNCTION_FAILED));
         }
     }
 
-    return images;
+    if (!imageLists.mDisabledImages.CreateDisabledImageList(
+            imageLists.mNormalImages.GetHandle())) {
+        return std::unexpected(lastErrorOr(ERROR_FUNCTION_FAILED));
+    }
+
+    return imageLists;
 }
 
 }  // namespace command_runner::ui

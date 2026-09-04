@@ -8,7 +8,12 @@
 
 namespace command_runner::ui {
 
-[[nodiscard]] std::expected<Win32xx::CImageList, DWORD>
-createToolbarImageList(HINSTANCE instance, UINT dpi);
+struct ToolbarImageLists final {
+    Win32xx::CImageList mNormalImages;
+    Win32xx::CImageList mDisabledImages;
+};
+
+[[nodiscard]] std::expected<ToolbarImageLists, DWORD>
+createToolbarImageLists(HINSTANCE instance, UINT dpi);
 
 }  // namespace command_runner::ui
