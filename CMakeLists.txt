@@ -70,6 +70,7 @@ set(COMMAND_RUNNER_SOURCES
     src/ui/command_dialog.cpp
     src/ui/close_dialog.cpp
     src/ui/main_window.cpp
+    src/ui/toolbar_icons.cpp
     src/ui/win32xx_helpers.cpp
     resources/CommandRunner.rc
     ${COMMAND_RUNNER_VERSION_RESOURCE}
@@ -94,9 +95,13 @@ target_link_libraries(CommandRunner
     PRIVATE
         nlohmann_json::nlohmann_json
         comctl32
+        d2d1
+        d3d11
+        dxgi
         gdi32
         ole32
         shell32
+        shlwapi
         user32
 )
 

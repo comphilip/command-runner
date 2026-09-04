@@ -147,6 +147,7 @@ private:
     [[nodiscard]] std::expected<void, DWORD> createControls();
     void destroyControls() noexcept;
     void layoutControls();
+    void updateActionToolBarImages(UINT dpi);
     void updateActionToolBarMetrics();
     void updateListColumns();
     void updateLogFont();
@@ -195,6 +196,7 @@ protected:
     HINSTANCE mInstance{};
     Win32xx::CReBar mActionReBar;
     Win32xx::CToolBar mActionToolBar;
+    Win32xx::CImageList mActionImages;
     Win32xx::CStatic mOptionsBar;
     CommandListView mListView;
     Splitter mSplitter;

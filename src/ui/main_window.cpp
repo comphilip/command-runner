@@ -2,6 +2,7 @@
 
 #include "resource.h"
 #include "ui/command_dialog.h"
+#include "ui/toolbar_icons.h"
 #include "ui/win32xx_helpers.h"
 
 #include <CommCtrl.h>
@@ -12,6 +13,7 @@
 #include <array>
 #include <ctime>
 #include <iomanip>
+#include <new>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -428,8 +430,19 @@ std::expected<void, DWORD> MainWindow::createControls() {
     if (!mActionReBar.IsWindow() || !mActionToolBar.IsWindow()) {
         return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
     }
+
+    const auto actionImages = createToolbarImageList(
+        mInstance, GetDpiForWindow(GetHwnd()));
+    if (!actionImages) {
+        return std::unexpected(actionImages.error());
+    }
+    mActionToolBar.SetImageList(actionImages->GetHandle());
+    mActionImages = std::move(*actionImages);
+
     for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
-        if (mActionToolBar.AddButton(ACTION_BUTTON_IDS[index]) == FALSE ||
+        if (mActionToolBar.AddButton(ACTION_BUTTON_IDS[index],
+                                     TRUE,
+                                     static_cast<int>(index)) == FALSE ||
             mActionToolBar.SetButtonText(ACTION_BUTTON_IDS[index],
                                          ACTION_BUTTON_LABELS[index]) == FALSE) {
             return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
@@ -749,6 +762,25 @@ void MainWindow::updateActionToolBarMetrics() {
     mActionReBar.SendMessage(RB_SETBANDINFO,
                              0,
                              reinterpret_cast<LPARAM>(&actionBand));
+}
+
+void MainWindow::updateActionToolBarImages(UINT dpi) {
+    if (!mActionToolBar.IsWindow()) {
+        return;
+    }
+
+    try {
+        const auto actionImages = createToolbarImageList(mInstance, dpi);
+        if (!actionImages) {
+            return;
+        }
+        mActionToolBar.SetImageList(actionImages->GetHandle());
+        mActionImages = std::move(*actionImages);
+    } catch (const Win32xx::CException&) {
+        // Keep the previous image list if a DPI-specific list cannot be built.
+    } catch (const std::bad_alloc&) {
+        // Keep the previous image list if the process is out of memory.
+    }
 }
 
 void MainWindow::updateListColumns() {
@@ -1445,6 +1477,7 @@ LRESULT MainWindow::WndProc(UINT message,
         }
         updateControlFonts();
         updateLogFont();
+        updateActionToolBarImages(HIWORD(wParam));
         updateActionToolBarMetrics();
         layoutControls();
         return 0;
