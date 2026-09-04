@@ -22,7 +22,7 @@ set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING
     "vcpkg triplet used for the native Windows build")
 
 project(CommandRunner
-    VERSION 0.2.0
+    VERSION 0.2.1
     DESCRIPTION "A native Windows command runner"
     LANGUAGES CXX
 )
