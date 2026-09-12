@@ -22,7 +22,7 @@ set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING
     "vcpkg triplet used for the native Windows build")
 
 project(CommandRunner
-    VERSION 0.2.0
+    VERSION 0.2.1
     DESCRIPTION "A native Windows command runner"
     LANGUAGES CXX
 )
@@ -70,6 +70,7 @@ set(COMMAND_RUNNER_SOURCES
     src/ui/command_dialog.cpp
     src/ui/close_dialog.cpp
     src/ui/main_window.cpp
+    src/ui/toolbar_icons.cpp
     src/ui/win32xx_helpers.cpp
     resources/CommandRunner.rc
     ${COMMAND_RUNNER_VERSION_RESOURCE}
@@ -94,9 +95,13 @@ target_link_libraries(CommandRunner
     PRIVATE
         nlohmann_json::nlohmann_json
         comctl32
+        d2d1
+        d3d11
+        dxgi
         gdi32
         ole32
         shell32
+        shlwapi
         user32
 )
 

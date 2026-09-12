@@ -2,16 +2,17 @@
 
 #include "resource.h"
 #include "ui/command_dialog.h"
+#include "ui/toolbar_icons.h"
 #include "ui/win32xx_helpers.h"
 
 #include <CommCtrl.h>
-#include <Richedit.h>
 #include <windowsx.h>
 
 #include <algorithm>
 #include <array>
 #include <ctime>
 #include <iomanip>
+#include <new>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -53,7 +54,6 @@ constexpr std::array<const wchar_t*, 6> COLUMN_LABELS{
 };
 
 constexpr std::array<int, 5> FIXED_COLUMN_WIDTHS{180, 100, 80, 70, 80};
-constexpr COLORREF STDERR_COLOR = RGB(198, 40, 40);
 
 [[nodiscard]] std::wstring numberOrEmpty(
     const std::optional<std::uint32_t>& value) {
@@ -428,8 +428,22 @@ std::expected<void, DWORD> MainWindow::createControls() {
     if (!mActionReBar.IsWindow() || !mActionToolBar.IsWindow()) {
         return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
     }
+
+    const auto actionImages = createToolbarImageLists(
+        mInstance, GetDpiForWindow(GetHwnd()));
+    if (!actionImages) {
+        return std::unexpected(actionImages.error());
+    }
+    mActionToolBar.SetImageList(actionImages->mNormalImages.GetHandle());
+    mActionToolBar.SetDisableImageList(
+        actionImages->mDisabledImages.GetHandle());
+    mActionImages = std::move(actionImages->mNormalImages);
+    mActionDisabledImages = std::move(actionImages->mDisabledImages);
+
     for (std::size_t index = 0; index < ACTION_BUTTON_LABELS.size(); ++index) {
-        if (mActionToolBar.AddButton(ACTION_BUTTON_IDS[index]) == FALSE ||
+        if (mActionToolBar.AddButton(ACTION_BUTTON_IDS[index],
+                                     TRUE,
+                                     static_cast<int>(index)) == FALSE ||
             mActionToolBar.SetButtonText(ACTION_BUTTON_IDS[index],
                                          ACTION_BUTTON_LABELS[index]) == FALSE) {
             return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
@@ -491,11 +505,14 @@ std::expected<void, DWORD> MainWindow::createControls() {
     }
     if (const auto result = create(mLogEdit,
                                    WS_EX_CLIENTEDGE,
-                                   MSFTEDIT_CLASS,
+                                   L"Edit",
                                    nullptr,
-                                   childStyle | WS_TABSTOP | ES_MULTILINE |
-                                       ES_READONLY | ES_AUTOVSCROLL |
-                                       ES_AUTOHSCROLL | WS_VSCROLL | WS_HSCROLL,
+                                   childStyle | WS_BORDER | WS_TABSTOP |
+                                       ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL |
+                                       (mConfiguration.mPreferences.mWrapLines
+                                            ? 0
+                                            : ES_AUTOHSCROLL | WS_HSCROLL) |
+                                       WS_VSCROLL,
                                    0);
         !result) {
         return result;
@@ -558,8 +575,6 @@ std::expected<void, DWORD> MainWindow::createControls() {
     }
 
     mLogEdit.LimitText(1'048'576);
-    mLogEdit.HideSelection(TRUE, FALSE);
-    mLogEdit.SetBackgroundColor(TRUE, RGB(255, 255, 255));
     return {};
 }
 
@@ -751,6 +766,28 @@ void MainWindow::updateActionToolBarMetrics() {
                              reinterpret_cast<LPARAM>(&actionBand));
 }
 
+void MainWindow::updateActionToolBarImages(UINT dpi) {
+    if (!mActionToolBar.IsWindow()) {
+        return;
+    }
+
+    try {
+        const auto actionImages = createToolbarImageLists(mInstance, dpi);
+        if (!actionImages) {
+            return;
+        }
+        mActionToolBar.SetImageList(actionImages->mNormalImages.GetHandle());
+        mActionToolBar.SetDisableImageList(
+            actionImages->mDisabledImages.GetHandle());
+        mActionImages = std::move(actionImages->mNormalImages);
+        mActionDisabledImages = std::move(actionImages->mDisabledImages);
+    } catch (const Win32xx::CException&) {
+        // Keep the previous image list if a DPI-specific list cannot be built.
+    } catch (const std::bad_alloc&) {
+        // Keep the previous image list if the process is out of memory.
+    }
+}
+
 void MainWindow::updateListColumns() {
     if (!mListView.IsWindow()) {
         return;
@@ -820,8 +857,22 @@ void MainWindow::updateLogOptions() {
     mAutoScrollCheck.SetCheck(mConfiguration.mPreferences.mAutoScroll
                                   ? BST_CHECKED
                                   : BST_UNCHECKED);
-    mLogEdit.SetTargetDevice(nullptr,
-                             mConfiguration.mPreferences.mWrapLines ? 0 : 1);
+
+    const DWORD currentStyle = mLogEdit.GetStyle();
+    const DWORD desiredStyle =
+        mConfiguration.mPreferences.mWrapLines
+            ? currentStyle & ~(ES_AUTOHSCROLL | WS_HSCROLL)
+            : currentStyle | ES_AUTOHSCROLL | WS_HSCROLL;
+    if (currentStyle != desiredStyle) {
+        mLogEdit.SetStyle(desiredStyle);
+        mLogEdit.SetWindowPos(nullptr,
+                              0,
+                              0,
+                              0,
+                              0,
+                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                                  SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
 }
 
 void MainWindow::updateActionAvailability() {
@@ -943,30 +994,14 @@ void MainWindow::refreshLogs() {
     }
 
     std::wstring text;
-    std::vector<std::pair<long, long>> stderrRanges;
     for (const LogLine& line : *lines) {
-        const std::size_t start = text.size();
         text += formatLogLine(line);
-        if (line.mStream == "stderr") {
-            stderrRanges.emplace_back(static_cast<long>(start),
-                                      static_cast<long>(text.size()));
-        }
     }
 
     mLogEdit.SetWindowText(text.c_str());
-    CHARFORMAT2W stderrFormat{};
-    stderrFormat.cbSize = sizeof(CHARFORMAT2W);
-    stderrFormat.dwMask = CFM_COLOR;
-    stderrFormat.crTextColor = STDERR_COLOR;
-    for (const auto [start, end] : stderrRanges) {
-        mLogEdit.SetSel(start, end);
-        mLogEdit.SetSelectionCharFormat(stderrFormat);
-    }
-    mLogEdit.HideSelection(TRUE, FALSE);
 
     if (mConfiguration.mPreferences.mAutoScroll && wasAtBottom) {
         mLogEdit.SetSel(-1, -1);
-        scrollRichEditCaret(mLogEdit);
     } else {
         const int currentFirstVisibleLine = mLogEdit.GetFirstVisibleLine();
         mLogEdit.LineScroll(firstVisibleLine - currentFirstVisibleLine);
@@ -1358,7 +1393,6 @@ BOOL MainWindow::OnCommand(WPARAM wParam, LPARAM lParam) {
         return TRUE;
     case IDC_JUMP_LATEST:
         mLogEdit.SetSel(-1, -1);
-        scrollRichEditCaret(mLogEdit);
         return TRUE;
     case IDC_WRAP_LINES:
         mConfiguration.mPreferences.mWrapLines =
@@ -1445,6 +1479,7 @@ LRESULT MainWindow::WndProc(UINT message,
         }
         updateControlFonts();
         updateLogFont();
+        updateActionToolBarImages(HIWORD(wParam));
         updateActionToolBarMetrics();
         layoutControls();
         return 0;

@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <shellapi.h>
+
 #include <wil/resource.h>
 
 #include <algorithm>
@@ -107,6 +109,113 @@ std::expected<void, std::wstring> verifyWorkingDirectory(
         return std::unexpected(L"Working directory is not a directory");
     }
     return {};
+}
+
+std::expected<std::vector<wchar_t>, std::wstring> buildChildEnvironment(
+    std::wstring_view workingDirectory) {
+    LPWCH inheritedEnvironment = GetEnvironmentStringsW();
+    if (inheritedEnvironment == nullptr) {
+        return std::unexpected(errorMessage(
+            L"Unable to read the process environment", GetLastError()));
+    }
+
+    std::vector<wchar_t> environment;
+    bool pathFound = false;
+    for (const wchar_t* entry = inheritedEnvironment; *entry != L'\0';) {
+        const std::wstring_view entryView(entry);
+        const std::size_t separator = entryView.find(L'=');
+        if (separator != std::wstring_view::npos &&
+            separator == 4 &&
+            CompareStringOrdinal(entryView.data(),
+                                 static_cast<int>(separator),
+                                 L"PATH",
+                                 -1,
+                                 TRUE) == CSTR_EQUAL) {
+            const std::wstring_view existingPath =
+                entryView.substr(separator + 1);
+            environment.insert(environment.end(),
+                                entryView.begin(),
+                                entryView.begin() +
+                                    static_cast<std::ptrdiff_t>(separator + 1));
+            environment.insert(environment.end(),
+                                workingDirectory.begin(),
+                                workingDirectory.end());
+            if (!existingPath.empty()) {
+                environment.push_back(L';');
+                environment.insert(environment.end(),
+                                    existingPath.begin(),
+                                    existingPath.end());
+            }
+            environment.push_back(L'\0');
+            pathFound = true;
+        } else {
+            environment.insert(environment.end(),
+                                entryView.begin(),
+                                entryView.end());
+            environment.push_back(L'\0');
+        }
+        entry += entryView.size() + 1;
+    }
+
+    if (!pathFound) {
+        constexpr std::wstring_view PATH_VARIABLE = L"PATH=";
+        environment.insert(environment.end(),
+                            PATH_VARIABLE.begin(),
+                            PATH_VARIABLE.end());
+        environment.insert(environment.end(),
+                            workingDirectory.begin(),
+                            workingDirectory.end());
+        environment.push_back(L'\0');
+    }
+    environment.push_back(L'\0');
+
+    if (!FreeEnvironmentStringsW(inheritedEnvironment)) {
+        return std::unexpected(errorMessage(
+            L"Unable to release the process environment", GetLastError()));
+    }
+    return environment;
+}
+
+std::optional<std::wstring> resolveExecutablePath(
+    std::wstring_view commandLine,
+    std::wstring_view workingDirectory) {
+    if (commandLine.empty() || workingDirectory.empty()) {
+        return std::nullopt;
+    }
+
+    const std::wstring normalizedCommandLine =
+        ProcessManager::normalizeCommandLine(commandLine);
+    int argumentCount = 0;
+    wil::unique_hlocal_ptr<LPWSTR[]> arguments(
+        CommandLineToArgvW(normalizedCommandLine.c_str(), &argumentCount));
+    if (!arguments || argumentCount == 0) {
+        return std::nullopt;
+    }
+    const std::wstring executableName(arguments.get()[0]);
+
+    if (executableName.empty() ||
+        executableName.find_first_of(L":\\/") != std::wstring::npos) {
+        return std::nullopt;
+    }
+
+    const std::wstring searchPath(workingDirectory);
+    std::vector<wchar_t> pathBuffer(MAX_PATH);
+    while (true) {
+        const DWORD length = SearchPathW(
+            searchPath.c_str(),
+            executableName.c_str(),
+            nullptr,
+            static_cast<DWORD>(pathBuffer.size()),
+            pathBuffer.data(),
+            nullptr);
+        if (length == 0) {
+            return std::nullopt;
+        }
+        if (length < pathBuffer.size()) {
+            return std::wstring(pathBuffer.data(), length);
+        }
+        pathBuffer.resize(static_cast<std::size_t>(length) + 1);
+    }
 }
 
 std::expected<std::wstring, std::wstring> commandInterpreter() {
@@ -688,6 +797,16 @@ private:
             return std::unexpected(codePageResult.error());
         }
 
+        std::vector<wchar_t> childEnvironment;
+        if (!config.mWorkingDirectory.empty()) {
+            const auto environmentResult =
+                buildChildEnvironment(config.mWorkingDirectory);
+            if (!environmentResult) {
+                return std::unexpected(environmentResult.error());
+            }
+            childEnvironment = std::move(*environmentResult);
+        }
+
         auto context = std::make_unique<ProcessContext>(
             config.mId, generation, *codePageResult);
         auto stdoutPipe = createPipe(
@@ -774,11 +893,12 @@ private:
         startupInfo.StartupInfo.hStdError = stderrWrite;
         startupInfo.lpAttributeList = attributeList;
 
-        const auto commandLine = buildCreateProcessCommandLine(config);
+        const std::wstring commandLine = buildCreateProcessCommandLine(config);
         std::vector<wchar_t> mutableCommandLine(commandLine.begin(),
                                                 commandLine.end());
         mutableCommandLine.push_back(L'\0');
         std::wstring interpreter;
+        std::wstring executablePath;
         LPCWSTR applicationName = nullptr;
         if (config.mShell) {
             const auto interpreterResult = commandInterpreter();
@@ -788,6 +908,10 @@ private:
             }
             interpreter = *interpreterResult;
             applicationName = interpreter.c_str();
+        } else if (const auto resolvedPath = resolveExecutablePath(
+                       config.mCommandLine, config.mWorkingDirectory)) {
+            executablePath = *resolvedPath;
+            applicationName = executablePath.c_str();
         }
 
         PROCESS_INFORMATION processInfo{};
@@ -803,7 +927,7 @@ private:
             nullptr,
             TRUE,
             creationFlags,
-            nullptr,
+            childEnvironment.empty() ? nullptr : childEnvironment.data(),
             config.mWorkingDirectory.empty()
                 ? nullptr
                 : config.mWorkingDirectory.c_str(),
