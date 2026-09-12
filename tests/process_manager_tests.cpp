@@ -2,10 +2,13 @@
 
 #include <windows.h>
 
+#include <array>
 #include <cassert>
 #include <chrono>
+#include <filesystem>
 #include <print>
 #include <string>
+#include <system_error>
 #include <thread>
 
 namespace {
@@ -81,6 +84,63 @@ void testShellMode() {
     assert(snapshot.mStderrLines.front().mText == L"shell-err ");
 }
 
+void testExecutableResolutionFromWorkingDirectory() {
+    std::array<wchar_t, MAX_PATH> systemDirectory{};
+    const UINT systemDirectoryLength = GetSystemDirectoryW(
+        systemDirectory.data(), static_cast<UINT>(systemDirectory.size()));
+    assert(systemDirectoryLength > 0 &&
+           systemDirectoryLength < systemDirectory.size());
+
+    std::array<wchar_t, MAX_PATH> temporaryPath{};
+    const DWORD temporaryPathLength = GetTempPathW(
+        static_cast<DWORD>(temporaryPath.size()), temporaryPath.data());
+    assert(temporaryPathLength > 0 &&
+           temporaryPathLength < temporaryPath.size());
+
+    const std::filesystem::path workingDirectory =
+        std::filesystem::path(std::wstring(temporaryPath.data(),
+                                           temporaryPathLength)) /
+        (L"CommandRunnerProcessTests-" +
+         std::to_wstring(GetCurrentProcessId()));
+    std::error_code filesystemError;
+    const bool created =
+        std::filesystem::create_directory(workingDirectory, filesystemError);
+    assert(created && !filesystemError);
+
+    const std::filesystem::path source =
+        std::filesystem::path(
+            std::wstring(systemDirectory.data(), systemDirectoryLength)) /
+        L"cmd.exe";
+    const std::filesystem::path executable =
+        workingDirectory / L"command-runner-path-test.exe";
+    assert(CopyFileW(source.c_str(), executable.c_str(), TRUE) != FALSE);
+
+    {
+        ProcessManager manager;
+        const CommandConfig command(
+            L"working-directory-path",
+            workingDirectory.wstring(),
+            L"command-runner-path-test.exe /D /C \"echo %PATH%\"",
+            "system",
+            L"native-process-working-directory-path");
+        manager.start(command);
+
+        waitUntil([&] {
+            const State state = manager.snapshot(command.mId).mState;
+            return state == State::EXITED || state == State::FAILED;
+        });
+        const auto snapshot = manager.snapshot(command.mId);
+        assert(snapshot.mState == State::EXITED);
+        assert(snapshot.mExitCode == 0);
+        assert(!snapshot.mStdoutLines.empty());
+        assert(snapshot.mStdoutLines.front().mText.rfind(
+                   workingDirectory.wstring(), 0) == 0);
+    }
+
+    std::filesystem::remove_all(workingDirectory, filesystemError);
+    assert(!filesystemError);
+}
+
 void testStopAndRestart() {
     ProcessManager manager;
     const CommandConfig command(
@@ -116,6 +176,7 @@ int main() {
     testCommandLineNormalization();
     testCaptureAndTailLine();
     testShellMode();
+    testExecutableResolutionFromWorkingDirectory();
     testStopAndRestart();
     std::print("ProcessManager tests passed\n");
     return 0;
