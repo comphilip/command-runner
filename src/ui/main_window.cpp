@@ -24,6 +24,9 @@ namespace {
 
 constexpr std::size_t ACTION_BUTTON_COUNT = 6;
 
+constexpr int ACTION_TOOLBAR_HORIZONTAL_PADDING = 12;
+constexpr int ACTION_TOOLBAR_VERTICAL_PADDING = 8;
+
 constexpr std::array<const wchar_t*, ACTION_BUTTON_COUNT>
     ACTION_BUTTON_LABELS{
         L"&Add",
@@ -445,10 +448,17 @@ std::expected<void, DWORD> MainWindow::createControls() {
                                      TRUE,
                                      static_cast<int>(index)) == FALSE ||
             mActionToolBar.SetButtonText(ACTION_BUTTON_IDS[index],
-                                         ACTION_BUTTON_LABELS[index]) == FALSE) {
+                                         ACTION_BUTTON_LABELS[index]) == FALSE ||
+            mActionToolBar.SetButtonStyle(ACTION_BUTTON_IDS[index],
+                                          BTNS_AUTOSIZE) == FALSE) {
             return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
         }
     }
+
+    mActionToolBar.SetPadding(
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_HORIZONTAL_PADDING),
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_VERTICAL_PADDING));
+    mActionToolBar.Autosize();
 
     const Win32xx::CSize actionToolBarSize = mActionToolBar.GetMaxSize();
     REBARBANDINFO actionBand{};
@@ -748,6 +758,11 @@ void MainWindow::updateActionToolBarMetrics() {
     if (!mActionToolBar.IsWindow() || !mActionReBar.IsWindow()) {
         return;
     }
+
+    mActionToolBar.SetPadding(
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_HORIZONTAL_PADDING),
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_VERTICAL_PADDING));
+    mActionToolBar.Autosize();
 
     const Win32xx::CSize actionToolBarSize = mActionToolBar.GetMaxSize();
     if (actionToolBarSize.cx <= 0 || actionToolBarSize.cy <= 0) {
