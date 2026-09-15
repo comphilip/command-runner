@@ -885,7 +885,7 @@ void MainWindow::updateActionAvailability() {
         states.push_back(mProcessManager.snapshot(commandId).mState);
     }
 
-    const bool editEnabled = states.size() == 1 && isInactive(states.front());
+    const bool editEnabled = states.size() == 1;
     const bool deleteEnabled = !states.empty() &&
                                std::ranges::all_of(states, isInactive);
     const bool startEnabled = std::ranges::any_of(states, isInactive);
@@ -1163,13 +1163,6 @@ void MainWindow::editSelectedCommand() {
     if (found == mConfiguration.mCommands.end()) {
         return;
     }
-    if (!isEditable(*found)) {
-        MessageBox(L"Stop this command before editing it.",
-                   L"Cannot Edit",
-                   MB_OK | MB_ICONWARNING);
-        return;
-    }
-
     const CommandConfig original = *found;
     const auto edited = CommandDialog::show(GetHwnd(), mInstance, &original);
     if (!edited) {
@@ -1239,7 +1232,7 @@ void MainWindow::invokeEditIfAvailable() {
         return;
     }
     const CommandConfig* command = commandById(mSelectedCommandIds.front());
-    if (command != nullptr && isEditable(*command)) {
+    if (command != nullptr) {
         editSelectedCommand();
     } else {
         startSelected();
@@ -1263,10 +1256,6 @@ void MainWindow::syncSelection() {
         refreshLogs();
     }
     updateActionAvailability();
-}
-
-bool MainWindow::isEditable(const CommandConfig& command) const {
-    return isInactive(mProcessManager.snapshot(command.mId).mState);
 }
 
 const CommandConfig* MainWindow::commandById(

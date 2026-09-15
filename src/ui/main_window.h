@@ -170,7 +170,6 @@ private:
     [[nodiscard]] bool saveConfiguration();
 
     void syncSelection();
-    [[nodiscard]] bool isEditable(const CommandConfig& command) const;
     [[nodiscard]] const CommandConfig* commandById(
         std::wstring_view commandId) const;
     [[nodiscard]] static bool isInactive(State state);
