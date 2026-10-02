@@ -24,6 +24,9 @@ namespace {
 
 constexpr std::size_t ACTION_BUTTON_COUNT = 6;
 
+constexpr int ACTION_TOOLBAR_HORIZONTAL_PADDING = 12;
+constexpr int ACTION_TOOLBAR_VERTICAL_PADDING = 8;
+
 constexpr std::array<const wchar_t*, ACTION_BUTTON_COUNT>
     ACTION_BUTTON_LABELS{
         L"&Add",
@@ -445,10 +448,17 @@ std::expected<void, DWORD> MainWindow::createControls() {
                                      TRUE,
                                      static_cast<int>(index)) == FALSE ||
             mActionToolBar.SetButtonText(ACTION_BUTTON_IDS[index],
-                                         ACTION_BUTTON_LABELS[index]) == FALSE) {
+                                         ACTION_BUTTON_LABELS[index]) == FALSE ||
+            mActionToolBar.SetButtonStyle(ACTION_BUTTON_IDS[index],
+                                          BTNS_AUTOSIZE) == FALSE) {
             return std::unexpected(lastWin32ErrorOr(ERROR_FUNCTION_FAILED));
         }
     }
+
+    mActionToolBar.SetPadding(
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_HORIZONTAL_PADDING),
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_VERTICAL_PADDING));
+    mActionToolBar.Autosize();
 
     const Win32xx::CSize actionToolBarSize = mActionToolBar.GetMaxSize();
     REBARBANDINFO actionBand{};
@@ -749,6 +759,11 @@ void MainWindow::updateActionToolBarMetrics() {
         return;
     }
 
+    mActionToolBar.SetPadding(
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_HORIZONTAL_PADDING),
+        scaleForWindow(GetHwnd(), ACTION_TOOLBAR_VERTICAL_PADDING));
+    mActionToolBar.Autosize();
+
     const Win32xx::CSize actionToolBarSize = mActionToolBar.GetMaxSize();
     if (actionToolBarSize.cx <= 0 || actionToolBarSize.cy <= 0) {
         return;
@@ -885,7 +900,7 @@ void MainWindow::updateActionAvailability() {
         states.push_back(mProcessManager.snapshot(commandId).mState);
     }
 
-    const bool editEnabled = states.size() == 1 && isInactive(states.front());
+    const bool editEnabled = states.size() == 1;
     const bool deleteEnabled = !states.empty() &&
                                std::ranges::all_of(states, isInactive);
     const bool startEnabled = std::ranges::any_of(states, isInactive);
@@ -1163,13 +1178,6 @@ void MainWindow::editSelectedCommand() {
     if (found == mConfiguration.mCommands.end()) {
         return;
     }
-    if (!isEditable(*found)) {
-        MessageBox(L"Stop this command before editing it.",
-                   L"Cannot Edit",
-                   MB_OK | MB_ICONWARNING);
-        return;
-    }
-
     const CommandConfig original = *found;
     const auto edited = CommandDialog::show(GetHwnd(), mInstance, &original);
     if (!edited) {
@@ -1239,7 +1247,7 @@ void MainWindow::invokeEditIfAvailable() {
         return;
     }
     const CommandConfig* command = commandById(mSelectedCommandIds.front());
-    if (command != nullptr && isEditable(*command)) {
+    if (command != nullptr) {
         editSelectedCommand();
     } else {
         startSelected();
@@ -1263,10 +1271,6 @@ void MainWindow::syncSelection() {
         refreshLogs();
     }
     updateActionAvailability();
-}
-
-bool MainWindow::isEditable(const CommandConfig& command) const {
-    return isInactive(mProcessManager.snapshot(command.mId).mState);
 }
 
 const CommandConfig* MainWindow::commandById(
