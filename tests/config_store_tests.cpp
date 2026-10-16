@@ -60,14 +60,14 @@ void testDefaultsAndLegacyFields(const std::filesystem::path& root) {
     assert(result->mCommands[0].mName == L"Unicode 名称");
     assert(!result->mCommands[0].mAutoStart);
     assert(!result->mCommands[0].mShell);
-    assert(result->mPreferences == Preferences(false, true));
+    assert(result->mPreferences == Preferences(true));
 }
 
 void testRoundTripAndAtomicSave(const std::filesystem::path& root) {
     const auto path = root / L"round-trip.json";
     const CommandConfig command(L"演示", root.wstring(), L"echo \"hello world\"",
                                 "utf-8", L"stable-id", true, true);
-    const ConfigData input{{command}, Preferences(true, false)};
+    const ConfigData input{{command}, Preferences(false)};
 
     const auto saveResult = ConfigStore(path).save(input);
     assert(saveResult.has_value());

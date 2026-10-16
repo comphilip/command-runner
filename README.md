@@ -10,7 +10,7 @@ in real time. Each log view retains up to the latest 1,000 lines.
 - Start, stop, and restart multiple selected commands
 - Shell and direct execution modes
 - stdout, stderr, and combined log views
-- Word wrapping, intelligent automatic scrolling, and jump to latest
+- Intelligent automatic scrolling and jump to latest
 - Atomic configuration saves to `%LOCALAPPDATA%\CommandRunner\commands.json`
 - Minimize to the system tray
 - When commands are running, closing the window offers three choices: stop

@@ -281,7 +281,6 @@ std::expected<json, std::wstring> dataToJson(const ConfigData& data) {
         {"version", CONFIGURATION_VERSION},
         {"commands", std::move(commands)},
         {"preferences", {
-            {"wrap_lines", data.mPreferences.mWrapLines},
             {"auto_scroll", data.mPreferences.mAutoScroll},
         }},
     };
@@ -417,15 +416,10 @@ ConfigLoadResult ConfigStore::load() const {
                 return std::unexpected(errorForPath(mPath,
                                                     L"field 'preferences' must be an object"));
             }
-            const auto wrapLines = optionalBool(*preferencesIterator, "wrap_lines", false);
-            if (!wrapLines) {
-                return std::unexpected(errorForPath(mPath, wrapLines.error()));
-            }
             const auto autoScroll = optionalBool(*preferencesIterator, "auto_scroll", true);
             if (!autoScroll) {
                 return std::unexpected(errorForPath(mPath, autoScroll.error()));
             }
-            data.mPreferences.mWrapLines = *wrapLines;
             data.mPreferences.mAutoScroll = *autoScroll;
         }
         return data;

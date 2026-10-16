@@ -519,16 +519,13 @@ std::expected<void, DWORD> MainWindow::createControls() {
                                    nullptr,
                                    childStyle | WS_BORDER | WS_TABSTOP |
                                        ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL |
-                                       (mConfiguration.mPreferences.mWrapLines
-                                            ? 0
-                                            : ES_AUTOHSCROLL | WS_HSCROLL) |
-                                       WS_VSCROLL,
+                                       ES_AUTOHSCROLL | WS_HSCROLL | WS_VSCROLL,
                                    0);
         !result) {
         return result;
     }
 
-    const std::array<std::pair<Win32xx::CButton*, std::pair<LPCWSTR, UINT>>, 7>
+    const std::array<std::pair<Win32xx::CButton*, std::pair<LPCWSTR, UINT>>, 6>
         optionControls{
             std::pair{&mCombinedRadio,
                       std::pair{L"Co&mbined", static_cast<UINT>(IDC_LOG_COMBINED)}},
@@ -541,8 +538,6 @@ std::expected<void, DWORD> MainWindow::createControls() {
             std::pair{&mJumpLatestButton,
                       std::pair{L"&Jump to Latest",
                                 static_cast<UINT>(IDC_JUMP_LATEST)}},
-            std::pair{&mWrapLinesCheck,
-                      std::pair{L"&Word wrap", static_cast<UINT>(IDC_WRAP_LINES)}},
             std::pair{&mAutoScrollCheck,
                       std::pair{L"Auto-scro&ll",
                                 static_cast<UINT>(IDC_AUTO_SCROLL)}},
@@ -584,7 +579,7 @@ std::expected<void, DWORD> MainWindow::createControls() {
                                static_cast<int>(index));
     }
 
-    mLogEdit.LimitText(1'048'576);
+    mLogEdit.LimitText(MAX_LOG_TEXT_LENGTH);
     return {};
 }
 
@@ -598,7 +593,6 @@ void MainWindow::destroyControls() noexcept {
     mStderrRadio.Destroy();
     mClearButton.Destroy();
     mJumpLatestButton.Destroy();
-    mWrapLinesCheck.Destroy();
     mAutoScrollCheck.Destroy();
     mOptionsBar.Destroy();
     mActionToolBar.Destroy();
@@ -620,13 +614,12 @@ void MainWindow::layoutControls() {
     const int fallbackControlHeight = currentFontHeight > 0
                                           ? currentFontHeight + 2 * controlPadding
                                           : GetSystemMetricsForDpi(SM_CYMENU, dpi);
-    const std::array<const Win32xx::CWnd*, 7> optionControls{
+    const std::array<const Win32xx::CWnd*, 6> optionControls{
         &mCombinedRadio,
         &mStdoutRadio,
         &mStderrRadio,
         &mClearButton,
         &mJumpLatestButton,
-        &mWrapLinesCheck,
         &mAutoScrollCheck,
     };
     int optionControlHeight = fallbackControlHeight;
@@ -720,9 +713,8 @@ void MainWindow::layoutControls() {
 
     const int rightGap = scaleForWindow(GetHwnd(), 4);
     int rightX = width - margin;
-    const std::array<std::pair<Win32xx::CWnd*, int>, 4> rightControls{
+    const std::array<std::pair<Win32xx::CWnd*, int>, 3> rightControls{
         std::pair{static_cast<Win32xx::CWnd*>(&mAutoScrollCheck), 88},
-        std::pair{static_cast<Win32xx::CWnd*>(&mWrapLinesCheck), 82},
         std::pair{static_cast<Win32xx::CWnd*>(&mJumpLatestButton), 108},
         std::pair{static_cast<Win32xx::CWnd*>(&mClearButton), 60},
     };
@@ -851,7 +843,6 @@ void MainWindow::updateControlFonts() {
     mStderrRadio.SetFont(font, TRUE);
     mClearButton.SetFont(font, TRUE);
     mJumpLatestButton.SetFont(font, TRUE);
-    mWrapLinesCheck.SetFont(font, TRUE);
     mAutoScrollCheck.SetFont(font, TRUE);
     mUiFont = newFont;
 }
@@ -866,27 +857,16 @@ void MainWindow::updateLogOptions() {
                                                        : BST_UNCHECKED);
     mStderrRadio.SetCheck(mLogView == LogView::STDERR ? BST_CHECKED
                                                        : BST_UNCHECKED);
-    mWrapLinesCheck.SetCheck(mConfiguration.mPreferences.mWrapLines
-                                 ? BST_CHECKED
-                                 : BST_UNCHECKED);
     mAutoScrollCheck.SetCheck(mConfiguration.mPreferences.mAutoScroll
                                   ? BST_CHECKED
                                   : BST_UNCHECKED);
+}
 
-    const DWORD currentStyle = mLogEdit.GetStyle();
-    const DWORD desiredStyle =
-        mConfiguration.mPreferences.mWrapLines
-            ? currentStyle & ~(ES_AUTOHSCROLL | WS_HSCROLL)
-            : currentStyle | ES_AUTOHSCROLL | WS_HSCROLL;
-    if (currentStyle != desiredStyle) {
-        mLogEdit.SetStyle(desiredStyle);
-        mLogEdit.SetWindowPos(nullptr,
-                              0,
-                              0,
-                              0,
-                              0,
-                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-                                  SWP_NOACTIVATE | SWP_FRAMECHANGED);
+void MainWindow::scrollLogToBottom() const {
+    if (mLogEdit.IsWindow()) {
+        mLogEdit.SendMessage(WM_VSCROLL,
+                             MAKEWPARAM(SB_BOTTOM, 0),
+                             0);
     }
 }
 
@@ -1016,7 +996,7 @@ void MainWindow::refreshLogs() {
     mLogEdit.SetWindowText(text.c_str());
 
     if (mConfiguration.mPreferences.mAutoScroll && wasAtBottom) {
-        mLogEdit.SetSel(-1, -1);
+        scrollLogToBottom();
     } else {
         const int currentFirstVisibleLine = mLogEdit.GetFirstVisibleLine();
         mLogEdit.LineScroll(firstVisibleLine - currentFirstVisibleLine);
@@ -1301,7 +1281,8 @@ bool MainWindow::logIsAtBottom() const {
     const int maximum = static_cast<int>(scrollInfo.nMax);
     const int position = static_cast<int>(scrollInfo.nPos);
     const int page = static_cast<int>(scrollInfo.nPage);
-    return maximum <= 0 || position + page >= maximum - 1;
+    const int maximumPosition = maximum - std::max(page - 1, 0);
+    return maximumPosition <= 0 || position >= maximumPosition;
 }
 
 std::wstring MainWindow::formatLogLine(const LogLine& line) const {
@@ -1396,14 +1377,7 @@ BOOL MainWindow::OnCommand(WPARAM wParam, LPARAM lParam) {
         clearLogs();
         return TRUE;
     case IDC_JUMP_LATEST:
-        mLogEdit.SetSel(-1, -1);
-        return TRUE;
-    case IDC_WRAP_LINES:
-        mConfiguration.mPreferences.mWrapLines =
-            mWrapLinesCheck.GetCheck() == BST_CHECKED;
-        updateLogOptions();
-        refreshLogs();
-        savePreferences();
+        scrollLogToBottom();
         return TRUE;
     case IDC_AUTO_SCROLL:
         mConfiguration.mPreferences.mAutoScroll =

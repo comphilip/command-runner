@@ -163,7 +163,7 @@ Combined | stdout | Standard error
 右侧从右向左排列：
 
 ```text
-Auto-scroll | Word wrap | Jump to Latest | Clear
+Auto-scroll | Jump to Latest | Clear
 ```
 
 可以实现一个只负责水平排列、间距和 DPI 缩放的轻量布局辅助类，避免坐标计算散落在各个消息处理器中。
@@ -285,13 +285,12 @@ struct ChildProcess
 - `encoding`
 - `auto_start`
 - `shell`
-- `wrap_lines`
 - `auto_scroll`
 
 兼容性细节：
 
 - 缺失的 `auto_start` 和 `shell` 按 `false` 处理。
-- 缺失的 `wrap_lines` 按 `false` 处理，缺失的 `auto_scroll` 按 `true` 处理。
+- 缺失的 `auto_scroll` 按 `true` 处理；旧配置中的 `wrap_lines` 字段会被忽略。
 - 读取旧配置时忽略已经废弃的 `execution_mode` 字段及未知字段，不能因此拒绝整个文件。
 - 应用初始化完成后自动启动所有 `auto_start=true` 的命令，每个命令仍须经过正常状态机和错误报告路径。
 - 配置读取失败时显示英文 Configuration Error，并以安全的空命令列表继续运行，不能在启动阶段崩溃或覆盖损坏的原文件。
@@ -431,7 +430,7 @@ Release 构建建议：
 - [ ] 配置启动错误会显示给用户且不会导致程序崩溃或覆盖原文件。
 - [ ] 所有 UI 控件都有 Mnemonic/Access key；双击仅编辑可编辑的命令。
 - [ ] Stop 能清理进程树，失败路径不会停留在 `STOPPING`；Restart 等待 Stop 完成。
-- [ ] Word wrap 默认关闭；Clear 位于 Jump to Latest 左侧；日志可切换 Combined/stdout/Standard error。
+- [ ] Clear 位于 Jump to Latest 左侧；日志可切换 Combined/stdout/Standard error。
 
 ### v0.1.0 和发布项
 
