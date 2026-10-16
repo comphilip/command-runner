@@ -18,7 +18,6 @@ enum class State {
 };
 
 struct Preferences {
-    bool mWrapLines{false};
     bool mAutoScroll{true};
 
     friend bool operator==(const Preferences&, const Preferences&) = default;

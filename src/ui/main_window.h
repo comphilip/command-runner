@@ -121,6 +121,7 @@ private:
     static constexpr int INITIAL_SPLITTER_PERCENT = 40;
     static constexpr int MINIMUM_LIST_HEIGHT = 100;
     static constexpr int MINIMUM_WORKING_DIRECTORY_WIDTH = 180;
+    static constexpr int MAX_LOG_TEXT_LENGTH = 1'048'576;
     static constexpr UINT PROCESS_EVENT_TIMER = 1;
     static constexpr UINT PROCESS_EVENT_INTERVAL_MILLISECONDS = 100;
 
@@ -136,7 +137,6 @@ private:
     static constexpr int IDC_LOG_STDERR = 1103;
     static constexpr int IDC_CLEAR = 1104;
     static constexpr int IDC_JUMP_LATEST = 1105;
-    static constexpr int IDC_WRAP_LINES = 1106;
     static constexpr int IDC_AUTO_SCROLL = 1107;
     static constexpr int IDC_LOG_LABEL = 1108;
 
@@ -151,6 +151,7 @@ private:
     void updateListColumns();
     void updateLogFont();
     void updateLogOptions();
+    void scrollLogToBottom() const;
     void updateActionAvailability();
     void updateControlFonts();
     void refreshRows();
@@ -206,7 +207,6 @@ protected:
     Win32xx::CButton mStderrRadio;
     Win32xx::CButton mClearButton;
     Win32xx::CButton mJumpLatestButton;
-    Win32xx::CButton mWrapLinesCheck;
     Win32xx::CButton mAutoScrollCheck;
     Win32xx::CFont mUiFont;
     Win32xx::CFont mLogFont;
